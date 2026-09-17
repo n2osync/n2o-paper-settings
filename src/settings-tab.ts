@@ -60,7 +60,7 @@ export class N2OPaperSettingsTab extends PluginSettingTab {
     if (this.plugin.lightOnlyInDark()) {
       const note = containerEl.createDiv({ cls: 'n2o-ps-problems' });
       note.createEl('strong', { text: 'N2O Paper is a light theme, and Obsidian is in dark mode.' });
-      note.createEl('div', {
+      note.createDiv({
         text: "In dark mode the theme steps aside and Obsidian's own dark look shows, so nothing here is applied. Your values are kept for when you switch back to light.",
       });
     } else if (!this.plugin.isActive()) {
@@ -68,7 +68,7 @@ export class N2OPaperSettingsTab extends PluginSettingTab {
       note.createEl('strong', {
         text: `These settings apply to "${this.plugin.scope}", and the current theme is "${this.plugin.activeTheme() || 'Obsidian default'}".`,
       });
-      note.createEl('div', {
+      note.createDiv({
         text: 'Nothing is being applied, so no other theme is touched. Your values are kept. Switch theme in Appearance, or change Apply to above.',
       });
     }
@@ -255,7 +255,7 @@ export class N2OPaperSettingsTab extends PluginSettingTab {
       setting.setClass('n2o-ps-global');
       const warn = el.createDiv({ cls: 'n2o-ps-problems' });
       warn.createEl('strong', { text: 'Applying to every theme.' });
-      warn.createEl('div', {
+      warn.createDiv({
         text: 'Your colours and sizes will now paint over whatever theme is selected. The on and off switches are N2O Paper features and do nothing elsewhere.',
       });
     }
@@ -288,7 +288,7 @@ export class N2OPaperSettingsTab extends PluginSettingTab {
         }))
       .addButton((b) => b
         .setButtonText('Reset all')
-        .setWarning()
+        .setDestructive()
         .onClick(async () => {
           const count = Object.keys(this.plugin.values).length;
           if (!count) { new Notice('Nothing to reset, everything is already at the theme default.'); return; }
@@ -340,7 +340,6 @@ export class N2OPaperSettingsTab extends PluginSettingTab {
         setting.addSlider((s) => s
           .setLimits(c.min ?? 0, c.max ?? 100, c.step ?? 1)
           .setValue(Number(current ?? c.default ?? 0))
-          .setDynamicTooltip()
           .onChange((v) => void set(v)));
         break;
 
@@ -478,7 +477,7 @@ class ConfirmModal extends Modal {
     this.contentEl.createEl('p', { text: this.text });
     new Setting(this.contentEl)
       .addButton((b) => b.setButtonText('Cancel').onClick(() => this.close()))
-      .addButton((b) => b.setButtonText(this.action).setWarning().onClick(() => { this.close(); void this.onConfirm(); }));
+      .addButton((b) => b.setButtonText(this.action).setDestructive().onClick(() => { this.close(); void this.onConfirm(); }));
   }
 
   onClose(): void {
