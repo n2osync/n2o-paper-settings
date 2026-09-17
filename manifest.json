@@ -1,0 +1,10 @@
+{
+  "id": "n2o-paper-settings",
+  "name": "N2O Paper Settings",
+  "version": "1.0.0",
+  "minAppVersion": "1.5.0",
+  "description": "Colour, typography, layout and component controls for the N2O Paper theme.",
+  "author": "simhaxdev",
+  "authorUrl": "https://n2osync.com",
+  "isDesktopOnly": false
+}
