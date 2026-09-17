@@ -46,7 +46,7 @@ export class N2OPaperSettingsTab extends PluginSettingTab {
     renderSyncCard(this.app, containerEl, () => this.display());
 
     if (!controls.length) {
-      containerEl.createEl('h3', { text: 'N2O Paper is not installed' });
+      new Setting(containerEl).setName('N2O Paper is not installed').setHeading();
       containerEl.createEl('p', {
         text: 'This plugin reads its controls from the N2O Paper theme. Install and select the theme in Appearance, then reopen this tab.',
       });

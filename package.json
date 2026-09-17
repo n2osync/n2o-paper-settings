@@ -1,6 +1,6 @@
 {
   "name": "n2o-paper-settings",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Settings companion for the N2O Paper Obsidian theme",
   "private": true,
   "type": "module",
@@ -11,7 +11,6 @@
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
-    "builtin-modules": "^3.3.0",
     "esbuild": "^0.20.0",
     "obsidian": "^1.5.7",
     "typescript": "^5.3.3"
