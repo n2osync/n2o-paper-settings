@@ -1,0 +1,163 @@
+/* N2O Paper Settings
+ *
+ * Obsidian 1.13 draws every .setting-item as its own card: near-white,
+ * 12px radius, 8px gap, 16px padding. Nesting those
+ * inside a bordered group gives you boxes within boxes, two competing
+ * radii, and no vertical rhythm, which is exactly how it looked.
+ *
+ * Each section is one card with flat rows inside, separated by
+ * hairlines and sharing one padding. The section then sits in the same
+ * rhythm as Obsidian's own cards rather than fighting it.
+ */
+
+.n2o-ps-group {
+  background: var(--background-primary-alt);
+  border-radius: 12px;
+  margin: 0 0 8px;
+  overflow: hidden;
+}
+
+.n2o-ps-group-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px;
+  cursor: pointer;
+  list-style: none;
+  font-weight: var(--font-semibold, 600);
+}
+
+.n2o-ps-group-summary::-webkit-details-marker { display: none; }
+
+/* Our own disclosure triangle, so it turns with the section instead of
+ * sitting wherever the platform decides to draw one. */
+.n2o-ps-group-summary::before {
+  content: '';
+  flex: none;
+  width: 0;
+  height: 0;
+  border-left: 5px solid currentColor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  opacity: 0.45;
+  transition: transform 120ms ease;
+}
+
+.n2o-ps-group[open] > .n2o-ps-group-summary::before { transform: rotate(90deg); }
+.n2o-ps-group-summary:hover { background: var(--background-modifier-hover); }
+.n2o-ps-group-summary:hover::before { opacity: 0.8; }
+
+.n2o-ps-group-title { flex: 1; }
+
+.n2o-ps-group-count {
+  font-weight: normal;
+  font-size: var(--font-ui-smaller, 12px);
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.n2o-ps-group-body { padding: 0; }
+
+/* Flatten Obsidian's per-row card inside a section. Same padding as the
+ * summary above it, so every label in the tab starts on one vertical line. */
+.n2o-ps-group-body > .setting-item {
+  background: transparent;
+  border-radius: 0;
+  margin: 0;
+  padding: 14px 16px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+/* The summary is already a divider for the first row. */
+.n2o-ps-group[open] > .n2o-ps-group-summary { border-bottom: 1px solid var(--background-modifier-border); }
+.n2o-ps-group-body > .setting-item:first-child { border-top: none; }
+
+/* A subsection folded inside a section.
+ *
+ * It reads as contained, not as another row, or the
+ * fold buys nothing. So: no card of its own, an indent, a quieter heading,
+ * and a hairline to separate it from whatever came before. */
+.n2o-ps-group .n2o-ps-sub {
+  background: transparent;
+  border-radius: 0;
+  margin: 0;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.n2o-ps-group .n2o-ps-sub > .n2o-ps-group-summary {
+  padding-left: 32px;
+  font-weight: normal;
+  color: var(--text-muted);
+}
+
+.n2o-ps-group .n2o-ps-sub[open] > .n2o-ps-group-summary {
+  font-weight: var(--font-semibold, 600);
+  color: var(--text-normal);
+}
+
+/* The controls inside a subsection line up under its title, not under the
+ * outer section's. */
+.n2o-ps-sub > .n2o-ps-group-body > .setting-item {
+  padding-left: 32px;
+}
+
+.n2o-ps-empty {
+  padding: 16px;
+  color: var(--text-muted);
+}
+
+.n2o-ps-problems {
+  margin: 0 0 8px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: var(--background-modifier-error);
+  color: var(--text-error);
+}
+
+.n2o-ps-problems ul { margin: 0.4em 0 0 1.2em; }
+
+/* The N2O Sync card. Same card as a section (one background, 12px radius, 16px
+ * padding) so it reads as part of this tab rather than an advert pasted on it. */
+.n2o-ps-sync {
+  background: var(--background-primary-alt);
+  border-radius: 12px;
+  margin: 0 0 16px;
+  padding: 16px;
+}
+
+.n2o-ps-sync-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+/* The mark is 2.12:1; 22px tall sits on the heading's cap height. */
+.n2o-ps-sync-mark {
+  height: 22px;
+  width: auto;
+  color: var(--text-normal);
+}
+
+.n2o-ps-sync-name {
+  font-size: 1.15em;
+  font-weight: var(--font-semibold, 600);
+}
+
+.n2o-ps-sync-body { color: var(--text-muted); }
+
+.n2o-ps-sync-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.n2o-ps-sync-line {
+  margin-top: 8px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+}
+
+.n2o-ps-sync-line:empty { display: none; }
+.n2o-ps-sync-line.mod-warning { color: var(--text-error); }
