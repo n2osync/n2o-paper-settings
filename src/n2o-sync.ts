@@ -23,10 +23,6 @@ const MIN_MAIN_JS_BYTES = 100 * 1024;
 /** SHA-256 of sql.js 1.13.0's sql-wasm.wasm, the same pin N2O Sync Lite carries. */
 const SQL_WASM_SHA256 = '0734155c83e493983d1f2ff5b09a4fab6e35a32e9449c7e4e545756439f62d73';
 
-export const INSTALL_DISCLOSURE =
-  'Installing downloads N2O Sync (about 2 MB) from github.com/n2osync/n2o and turns it on. ' +
-  'Your notes and these settings are not touched.';
-
 interface PluginApi {
   enabledPlugins?: Set<string>;
   manifests?: Record<string, unknown>;
@@ -218,7 +214,6 @@ export function renderSyncRow(app: App, el: HTMLElement, redraw: () => void): vo
   }
 
   const install = actions.createEl('button', { cls: 'mod-cta', text: 'Install N2O Sync Pro' });
-  line.setText(INSTALL_DISCLOSURE);
   install.onclick = async () => {
     install.disabled = true;
     try {
