@@ -32,7 +32,9 @@
 > **Not an Obsidian product.** N2O Paper Settings is an independent plugin. It is
 > not made by, endorsed by, or affiliated with Obsidian.
 
-![The settings tab](images/top.jpg)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/n2osync/n2o-paper-settings/main/images/top.jpg" alt="The settings tab" width="720" />
+</p>
 
 ## What it does
 
@@ -40,40 +42,58 @@ A theme is CSS and cannot draw a settings tab, so this plugin reads the controls
 N2O Paper declares and renders them: 110 of them, grouped the way the theme
 groups them, with a search box, live colour swatches, and export and import.
 
-![Switching palettes from the settings tab](images/settings.gif)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/n2osync/n2o-paper-settings/main/images/settings.gif" alt="Switching palettes from the settings tab" width="720" />
+</p>
 
 **Looks** holds the palette, the heading colours and the paper feel.
 
-![Looks](images/looks.jpg)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/n2osync/n2o-paper-settings/main/images/looks.jpg" alt="Looks" width="720" />
+</p>
 
 **Colours** covers every ink on the page, each with a swatch you can see change.
 
-![Colours](images/colours.jpg)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/n2osync/n2o-paper-settings/main/images/colours.jpg" alt="Colours" width="720" />
+</p>
 
 **Typography** sets the page serif, the interface sans, the mono for code, and
 the sizes.
 
-![Typography](images/typography.jpg)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/n2osync/n2o-paper-settings/main/images/typography.jpg" alt="Typography" width="720" />
+</p>
 
 **Layout** is the measure, the margins and the spacing.
 
-![Layout](images/layout.jpg)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/n2osync/n2o-paper-settings/main/images/layout.jpg" alt="Layout" width="720" />
+</p>
 
 **Paper** is the grain, the light, the drift and the softbox over the desk.
 
-![Paper](images/paper.jpg)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/n2osync/n2o-paper-settings/main/images/paper.jpg" alt="Paper" width="720" />
+</p>
 
 **Components** covers callouts, tables, tasks, tags, embeds and the rest.
 
-![Components](images/components.jpg)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/n2osync/n2o-paper-settings/main/images/components.jpg" alt="Components" width="720" />
+</p>
 
 **Code** colours the syntax, one token at a time.
 
-![Code](images/code.jpg)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/n2osync/n2o-paper-settings/main/images/code.jpg" alt="Code" width="720" />
+</p>
 
 **Advanced** holds the twin controls, the fine numbers behind the presets.
 
-![Advanced](images/advanced.jpg)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/n2osync/n2o-paper-settings/main/images/advanced.jpg" alt="Advanced" width="720" />
+</p>
 
 ## Apply to
 
