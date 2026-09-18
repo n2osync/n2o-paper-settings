@@ -1,6 +1,6 @@
 {
   "name": "n2o-paper-settings",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Settings companion for the N2O Paper Obsidian theme",
   "private": true,
   "type": "module",

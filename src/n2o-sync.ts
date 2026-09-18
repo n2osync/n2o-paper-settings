@@ -171,17 +171,22 @@ export function brandMark(): SVGSVGElement {
   return svg;
 }
 
-/** The card itself. `redraw` re-renders the tab after a state change. */
-export function renderSyncCard(app: App, el: HTMLElement, redraw: () => void): void {
-  const card = el.createDiv({ cls: 'n2o-ps-sync' });
-  const head = card.createDiv({ cls: 'n2o-ps-sync-head' });
+/**
+ * One row of the box at the top of the tab: the mark and name on the left, the
+ * state under it, the actions on the right. `redraw` re-renders the tab after
+ * a state change.
+ */
+export function renderSyncRow(app: App, el: HTMLElement, redraw: () => void): void {
+  const row = el.createDiv({ cls: 'n2o-ps-row' });
+  const text = row.createDiv({ cls: 'n2o-ps-row-text' });
+  const head = text.createDiv({ cls: 'n2o-ps-sync-head' });
   head.appendChild(brandMark());
   head.createSpan({ cls: 'n2o-ps-sync-name', text: 'Sync' });
 
   const status = syncStatus(app);
-  const body = card.createDiv({ cls: 'n2o-ps-sync-body' });
-  const actions = card.createDiv({ cls: 'n2o-ps-sync-actions' });
-  const line = card.createDiv({ cls: 'n2o-ps-sync-line' });
+  const body = text.createDiv({ cls: 'n2o-ps-sync-body' });
+  const actions = row.createDiv({ cls: 'n2o-ps-sync-actions' });
+  const line = text.createDiv({ cls: 'n2o-ps-sync-line' });
 
   if (status === 'running') {
     body.setText('N2O Sync is running in this vault.');

@@ -122,45 +122,68 @@
 
 .n2o-ps-problems ul { margin: 0.4em 0 0 1.2em; }
 
-/* The N2O Sync card. Same card as a section (one background, 12px radius, 16px
- * padding) so it reads as part of this tab rather than an advert pasted on it. */
-.n2o-ps-sync {
+/* The box at the top of the tab: the theme, then N2O Sync, one slim row each.
+ * They were two tall cards side by side, which left a hole under the shorter
+ * one and pushed the settings themselves off the first screen. */
+.n2o-ps-top {
   background: var(--background-primary-alt);
   border-radius: 12px;
   margin: 0 0 16px;
-  padding: 16px;
+  overflow: hidden;
+}
+.n2o-ps-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+}
+/* a hairline between the rows, none under the last */
+.n2o-ps-row + .n2o-ps-row {
+  border-top: 1px solid var(--background-modifier-border);
+}
+.n2o-ps-row-text {
+  flex: 1;
+  min-width: 0;
+}
+/* the actions keep their own line on a narrow tab rather than squeezing the text */
+@media (max-width: 620px) {
+  .n2o-ps-row { flex-wrap: wrap; }
+  .n2o-ps-row .n2o-ps-sync-actions { margin-top: 4px; }
 }
 
 .n2o-ps-sync-head {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 6px;
+  margin-bottom: 2px;
 }
 
 /* The mark is 2.12:1; 22px tall sits on the heading's cap height. */
 .n2o-ps-sync-mark {
-  height: 22px;
+  height: 18px;
   width: auto;
   color: var(--text-normal);
 }
 
 .n2o-ps-sync-name {
-  font-size: 1.15em;
+  font-size: 1.05em;
   font-weight: var(--font-semibold, 600);
 }
 
-.n2o-ps-sync-body { color: var(--text-muted); }
+.n2o-ps-sync-body {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
 
 .n2o-ps-sync-actions {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-top: 12px;
+  flex: 0 0 auto;
 }
 
 .n2o-ps-sync-line {
-  margin-top: 8px;
+  margin-top: 4px;
   font-size: var(--font-ui-smaller);
   color: var(--text-faint);
 }

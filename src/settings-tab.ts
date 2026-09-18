@@ -8,7 +8,7 @@
  */
 import { App, Modal, Notice, PluginSettingTab, Setting } from 'obsidian';
 import type { Control } from './parse';
-import { renderSyncCard } from './n2o-sync';
+import { brandMark, renderSyncRow } from './n2o-sync';
 import { installTheme, selectTheme, themeStatus, THEME_NAME as PAPER } from './theme-install';
 import type { Values } from './apply';
 import { effective, propsFor } from './apply';
@@ -72,22 +72,27 @@ export class N2OPaperSettingsTab extends PluginSettingTab {
 
     const { controls, problems } = this.plugin.spec;
 
-    this.renderThemeCard(containerEl);
-    renderSyncCard(this.app, containerEl, () => this.display());
+    // One box at the top, two slim rows: the theme this tab is for, and the
+    // sync plugin. They were two tall cards with the scope control and a
+    // warning wedged between them.
+    const top = containerEl.createDiv({ cls: 'n2o-ps-top' });
+    const themeCardShown = this.renderThemeCard(top);
+    renderSyncRow(this.app, top, () => this.display());
 
     if (!controls.length) return;
 
     this.renderScope(containerEl);
 
-    // A user whose settings are parked is told so, not left wondering why a
-    // slider does nothing.
+    // A reader whose settings are parked is told so, rather than left
+    // wondering why a slider does nothing. The theme card already says it when
+    // it is on screen, so this is the dark-mode case and the odd scope.
     if (this.plugin.lightOnlyInDark()) {
       const note = containerEl.createDiv({ cls: 'n2o-ps-problems' });
       note.createEl('strong', { text: 'N2O Paper is a light theme, and Obsidian is in dark mode.' });
       note.createDiv({
         text: "In dark mode the theme steps aside and Obsidian's own dark look shows, so nothing here is applied. Your values are kept for when you switch back to light.",
       });
-    } else if (!this.plugin.isActive()) {
+    } else if (!this.plugin.isActive() && !themeCardShown) {
       const note = containerEl.createDiv({ cls: 'n2o-ps-problems' });
       note.createEl('strong', {
         text: `These settings apply to "${this.plugin.scope}", and the current theme is "${this.plugin.activeTheme() || 'Obsidian default'}".`,
@@ -258,21 +263,24 @@ export class N2OPaperSettingsTab extends PluginSettingTab {
    * The theme card. Only drawn when the theme is missing or is installed but
    * not selected, because this plugin does nothing at all without it.
    */
-  private renderThemeCard(el: HTMLElement): void {
+  private renderThemeCard(el: HTMLElement): boolean {
     const status = themeStatus(this.app);
     const noControls = !this.plugin.spec.controls.length;
     // Selected, and yet there is nothing to render: the theme's folder was
     // deleted while appearance.json still names it, so Obsidian reports it as
     // the theme and the tab came up empty with no way out. Offer the download.
     if (status === 'active' && noControls) {
-      const card = el.createDiv({ cls: 'n2o-ps-sync' });
-      card.createDiv({ cls: 'n2o-ps-sync-head' }).createSpan({ cls: 'n2o-ps-sync-name', text: PAPER });
-      card.createDiv({
+      const row = el.createDiv({ cls: 'n2o-ps-row' });
+      const text = row.createDiv({ cls: 'n2o-ps-row-text' });
+      const brandHead = text.createDiv({ cls: 'n2o-ps-sync-head' });
+      brandHead.appendChild(brandMark());
+      brandHead.createSpan({ cls: 'n2o-ps-sync-name', text: 'Paper' });
+      text.createDiv({
         cls: 'n2o-ps-sync-body',
-        text: `${PAPER} is selected, but its theme.css cannot be read, so there are no controls to show. Installing it again puts the file back.`,
+        text: `${PAPER} is selected, but its theme.css cannot be read, so there are no controls to show.`,
       });
-      const line = card.createDiv({ cls: 'n2o-ps-sync-line' });
-      const again = card.createDiv({ cls: 'n2o-ps-sync-actions' })
+      const line = text.createDiv({ cls: 'n2o-ps-sync-line' });
+      const again = row.createDiv({ cls: 'n2o-ps-sync-actions' })
         .createEl('button', { cls: 'mod-cta', text: `Install ${PAPER} again` });
       again.onclick = async () => {
         again.disabled = true;
@@ -286,28 +294,32 @@ export class N2OPaperSettingsTab extends PluginSettingTab {
         await this.plugin.readTheme();
         this.display();
       };
-      return;
+      return true;
     }
-    if (status === 'active') return;
+    if (status === 'active') return false;
 
-    const card = el.createDiv({ cls: 'n2o-ps-sync' });
-    const head = card.createDiv({ cls: 'n2o-ps-sync-head' });
-    head.createSpan({ cls: 'n2o-ps-sync-name', text: PAPER });
-    const body = card.createDiv({ cls: 'n2o-ps-sync-body' });
-    const actions = card.createDiv({ cls: 'n2o-ps-sync-actions' });
-    const line = card.createDiv({ cls: 'n2o-ps-sync-line' });
+    const row = el.createDiv({ cls: 'n2o-ps-row' });
+    const text = row.createDiv({ cls: 'n2o-ps-row-text' });
+    // The same mark as the Sync row: one wordmark across the theme and the
+    // plugin, so the two rows read as N2O Paper and N2O Sync.
+    const head = text.createDiv({ cls: 'n2o-ps-sync-head' });
+    head.appendChild(brandMark());
+    head.createSpan({ cls: 'n2o-ps-sync-name', text: 'Paper' });
+    const body = text.createDiv({ cls: 'n2o-ps-sync-body' });
+    const actions = row.createDiv({ cls: 'n2o-ps-sync-actions' });
+    const line = text.createDiv({ cls: 'n2o-ps-sync-line' });
 
     if (status === 'installed') {
-      body.setText(`${PAPER} is in this vault, and another theme is selected. These settings paint ${PAPER} only.`);
+      body.setText(`Installed, and another theme is selected. These settings paint ${PAPER} only.`);
       const use = actions.createEl('button', { cls: 'mod-cta', text: `Switch to ${PAPER}` });
       use.onclick = () => {
         selectTheme(this.app);
         this.display();
       };
-      return;
+      return true;
     }
 
-    body.setText(`These controls come from the ${PAPER} theme, which is not in this vault yet.`);
+    body.setText('These controls come from the theme, which is not in this vault yet.');
     const get = actions.createEl('button', { cls: 'mod-cta', text: `Install ${PAPER}` });
     get.onclick = async () => {
       get.disabled = true;
@@ -323,6 +335,7 @@ export class N2OPaperSettingsTab extends PluginSettingTab {
       await this.plugin.readTheme();
       this.display();
     };
+    return true;
   }
 
   /**
