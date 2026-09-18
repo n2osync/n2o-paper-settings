@@ -6,13 +6,15 @@
  * theme is fetched on first load, and the card offers the same thing by hand
  * whenever the theme is missing or is installed but not selected.
  *
- * Two ways in, in this order:
- *   1. app.customCss.installTheme, Obsidian's own installer, which is what the
- *      theme browser uses. It refuses any theme the app's community list does
- *      not carry, so it does nothing until the listing is mirrored.
- *   2. The release on GitHub: theme.css and manifest.json written into
- *      <config>/themes/N2O Paper/. Nothing lands on disk unless both files
- *      arrive and the manifest parses and names this theme.
+ * It installs from the release on GitHub: theme.css and manifest.json written
+ * into <config>/themes/N2O Paper/. Nothing lands on disk unless both files
+ * arrive and the manifest parses and names this theme.
+ *
+ * Obsidian's own app.customCss.installTheme is NOT used, though it exists and
+ * is what the theme browser calls. Given a theme its community list does not
+ * carry yet, it posts an "Installing theme" notice with no timeout and then
+ * returns without installing anything, so the notice stays on screen for the
+ * rest of the session. Seen on a clean vault, which is exactly where this runs.
  */
 import { App, Notice, requestUrl } from 'obsidian';
 
@@ -27,7 +29,6 @@ interface CustomCss {
   theme?: string;
   themes?: Record<string, unknown>;
   isThemeInstalled?: (name: string) => boolean;
-  installTheme?: (manifest: { name: string; repo: string }, version: string) => Promise<void>;
   setTheme?: (name: string) => void;
   loadTheme?: (name: string) => void;
   readThemes?: () => Promise<void>;
@@ -107,28 +108,9 @@ function verify(files: Record<Asset, ArrayBuffer>): void {
   }
 }
 
-/**
- * Install the theme and select it.
- *
- * Obsidian's own installer goes first and is a no-op when the app does not know
- * the theme yet, so a failure there is not an error: the release path follows.
- */
+/** Download, verify, write, then select. Nothing is written if any check fails. */
 export async function installTheme(app: App, onProgress: (m: string) => void): Promise<void> {
   const c = css(app);
-  if (c?.installTheme) {
-    onProgress('Asking Obsidian to install it...');
-    try {
-      await c.installTheme({ name: THEME_NAME, repo: THEME_REPO }, '');
-      await c.readThemes?.();
-    } catch {
-      /* not in the app's community list yet; the release path below handles it */
-    }
-    if (themeStatus(app) !== 'absent') {
-      selectTheme(app);
-      return;
-    }
-  }
-
   const files = await fromRelease(onProgress);
   onProgress('Checking the files...');
   verify(files);
