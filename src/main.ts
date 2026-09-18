@@ -16,6 +16,7 @@ import { parseSettingsBlock, type ParseResult } from './parse';
 import { apply, reset, type Values } from './apply';
 import { N2OPaperSettingsTab } from './settings-tab';
 import { FontPicker, fontClasses } from './per-note-font';
+import { installTheme, themeStatus } from './theme-install';
 
 const THEME_NAME = 'N2O Paper';
 
@@ -37,6 +38,8 @@ interface StoredData {
   /** Section titles the user has left expanded. Remembered so a tab that was
    *  set up once does not need setting up again on every visit. */
   open?: string[];
+  /** Whether the first load has already gone looking for the theme. */
+  autoInstallTried?: boolean;
 }
 
 export default class N2OPaperSettingsPlugin extends Plugin {
@@ -44,12 +47,14 @@ export default class N2OPaperSettingsPlugin extends Plugin {
   scope: string = THEME_NAME;
   open: string[] = [];
   spec: ParseResult = EMPTY_SPEC;
+  autoInstallTried = false;
 
   async onload(): Promise<void> {
     const stored = (await this.loadData()) as StoredData | null;
     this.values = stored?.values ?? {};
     this.scope = stored?.scope ?? THEME_NAME;
     this.open = stored?.open ?? [];
+    this.autoInstallTried = stored?.autoInstallTried === true;
     await this.readTheme();
 
     this.addSettingTab(new N2OPaperSettingsTab(this.app, this));
@@ -85,7 +90,30 @@ export default class N2OPaperSettingsPlugin extends Plugin {
       },
     });
 
-    this.app.workspace.onLayoutReady(() => this.refresh());
+    this.app.workspace.onLayoutReady(() => {
+      this.refresh();
+      void this.fetchThemeOnce();
+    });
+  }
+
+  /**
+   * Get the theme itself, once, on a vault that does not have it.
+   *
+   * Without N2O Paper this plugin has nothing to render: it reads its controls
+   * out of the theme. So the first load fetches it and selects it, and the
+   * attempt is recorded either way, so a vault that does not want the theme is
+   * never asked twice. The card in the settings tab offers the same thing by
+   * hand afterwards.
+   */
+  private async fetchThemeOnce(): Promise<void> {
+    if (this.autoInstallTried || themeStatus(this.app) !== 'absent') return;
+    this.autoInstallTried = true;
+    await this.persist();
+    try {
+      await installTheme(this.app, () => {});
+    } catch {
+      /* offline, or the release is unreachable. The settings tab has the button. */
+    }
   }
 
   onunload(): void {
@@ -162,7 +190,12 @@ export default class N2OPaperSettingsPlugin extends Plugin {
   }
 
   async persist(): Promise<void> {
-    const data: StoredData = { scope: this.scope, values: this.values, open: this.open };
+    const data: StoredData = {
+      scope: this.scope,
+      values: this.values,
+      open: this.open,
+      autoInstallTried: this.autoInstallTried,
+    };
     await this.saveData(data);
     this.refresh();
   }

@@ -9,6 +9,7 @@
 import { App, Modal, Notice, PluginSettingTab, Setting } from 'obsidian';
 import type { Control } from './parse';
 import { renderSyncCard } from './n2o-sync';
+import { installTheme, selectTheme, themeStatus, THEME_NAME as PAPER } from './theme-install';
 import type { Values } from './apply';
 import { effective, propsFor } from './apply';
 import type N2OPaperSettingsPlugin from './main';
@@ -43,15 +44,10 @@ export class N2OPaperSettingsTab extends PluginSettingTab {
 
     const { controls, problems } = this.plugin.spec;
 
+    this.renderThemeCard(containerEl);
     renderSyncCard(this.app, containerEl, () => this.display());
 
-    if (!controls.length) {
-      new Setting(containerEl).setName('N2O Paper is not installed').setHeading();
-      containerEl.createEl('p', {
-        text: 'This plugin reads its controls from the N2O Paper theme. Install and select the theme in Appearance, then reopen this tab.',
-      });
-      return;
-    }
+    if (!controls.length) return;
 
     this.renderScope(containerEl);
 
@@ -226,6 +222,49 @@ export class N2OPaperSettingsTab extends PluginSettingTab {
       this.renderGroup(body, k.group, q, matches, false, depth + 1);
     }
     return total;
+  }
+
+  /**
+   * The theme card. Only drawn when the theme is missing or is installed but
+   * not selected, because this plugin does nothing at all without it.
+   */
+  private renderThemeCard(el: HTMLElement): void {
+    const status = themeStatus(this.app);
+    if (status === 'active') return;
+
+    const card = el.createDiv({ cls: 'n2o-ps-sync' });
+    const head = card.createDiv({ cls: 'n2o-ps-sync-head' });
+    head.createSpan({ cls: 'n2o-ps-sync-name', text: PAPER });
+    const body = card.createDiv({ cls: 'n2o-ps-sync-body' });
+    const actions = card.createDiv({ cls: 'n2o-ps-sync-actions' });
+    const line = card.createDiv({ cls: 'n2o-ps-sync-line' });
+
+    if (status === 'installed') {
+      body.setText(`${PAPER} is in this vault, and another theme is selected. These settings paint ${PAPER} only.`);
+      const use = actions.createEl('button', { cls: 'mod-cta', text: `Switch to ${PAPER}` });
+      use.onclick = () => {
+        selectTheme(this.app);
+        this.display();
+      };
+      return;
+    }
+
+    body.setText(`These controls come from the ${PAPER} theme, which is not in this vault yet.`);
+    const get = actions.createEl('button', { cls: 'mod-cta', text: `Install ${PAPER}` });
+    get.onclick = async () => {
+      get.disabled = true;
+      try {
+        await installTheme(this.app, (m) => line.setText(m));
+      } catch (e) {
+        line.setText(e instanceof Error ? e.message : String(e));
+        line.addClass('mod-warning');
+        get.disabled = false;
+        get.setText('Try again');
+        return;
+      }
+      await this.plugin.readTheme();
+      this.display();
+    };
   }
 
   /**
