@@ -15,6 +15,7 @@ import { Plugin, Notice } from 'obsidian';
 import { parseSettingsBlock, type ParseResult } from './parse';
 import { apply, reset, type Values } from './apply';
 import { N2OPaperSettingsTab } from './settings-tab';
+import { registerPictureCaptions } from './picture-captions';
 import { FontPicker, fontClasses } from './per-note-font';
 import { installTheme, themeStatus } from './theme-install';
 
@@ -61,6 +62,11 @@ export default class N2OPaperSettingsPlugin extends Plugin {
 
     this.tab = new N2OPaperSettingsTab(this.app, this);
     this.addSettingTab(this.tab);
+
+    /* A picture with a flag on it cannot be captioned by the theme alone: the
+     * caption is the alt text and CSS cannot strip the flag word out of it.
+     * This computes the leftover and hands it to the theme on an attribute. */
+    registerPictureCaptions((fn) => this.registerMarkdownPostProcessor(fn));
 
     // Light and dark change which half of every themed colour is in force, and
     // a theme switch changes the control list entirely, so both re-run this.
