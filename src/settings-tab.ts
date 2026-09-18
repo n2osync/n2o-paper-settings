@@ -36,7 +36,35 @@ export class N2OPaperSettingsTab extends PluginSettingTab {
     this.plugin = plugin;
   }
 
+  /** The element Obsidian scrolls when the settings list is taller than the window. */
+  private scroller(): HTMLElement {
+    return (this.containerEl.closest('.vertical-tab-content') as HTMLElement | null) ?? this.containerEl;
+  }
+
+  /**
+   * Redraw, and stay where the reader was.
+   *
+   * Emptying the container sets scrollTop to 0, so a redraw used to throw the
+   * page back to the top: change one setting through its reset arrow, or the
+   * Apply to dropdown, and you lost your place in a list of 124 controls. The
+   * position is taken before the rebuild and put back after the browser has
+   * laid the new content out.
+   */
   display(): void {
+    const scroller = this.scroller();
+    const top = scroller.scrollTop;
+    this.render();
+    if (!top) return;
+    // Obsidian 1.13 opens settings in its OWN window, and the main window's
+    // timers are throttled while that one has focus, so the restore is
+    // scheduled on the window the list actually lives in.
+    const win = scroller.ownerDocument.defaultView ?? window;
+    const restore = () => { scroller.scrollTop = top; };
+    win.requestAnimationFrame(restore);
+    win.setTimeout(restore, 60);
+  }
+
+  private render(): void {
     const { containerEl } = this;
     containerEl.empty();
     this.liveSwatches = [];
@@ -140,7 +168,9 @@ export class N2OPaperSettingsTab extends PluginSettingTab {
           this.query = v;
           this.renderGroupsInto();
         });
-        window.setTimeout(() => t.inputEl.focus(), 0);
+        // Focus only while a search is actually in progress, and never scroll
+        // to do it: focusing on every redraw dragged the list back to the top.
+        if (this.query) window.setTimeout(() => t.inputEl.focus({ preventScroll: true }), 0);
       });
     this.groupsEl = el.createDiv();
   }
@@ -230,6 +260,34 @@ export class N2OPaperSettingsTab extends PluginSettingTab {
    */
   private renderThemeCard(el: HTMLElement): void {
     const status = themeStatus(this.app);
+    const noControls = !this.plugin.spec.controls.length;
+    // Selected, and yet there is nothing to render: the theme's folder was
+    // deleted while appearance.json still names it, so Obsidian reports it as
+    // the theme and the tab came up empty with no way out. Offer the download.
+    if (status === 'active' && noControls) {
+      const card = el.createDiv({ cls: 'n2o-ps-sync' });
+      card.createDiv({ cls: 'n2o-ps-sync-head' }).createSpan({ cls: 'n2o-ps-sync-name', text: PAPER });
+      card.createDiv({
+        cls: 'n2o-ps-sync-body',
+        text: `${PAPER} is selected, but its theme.css cannot be read, so there are no controls to show. Installing it again puts the file back.`,
+      });
+      const line = card.createDiv({ cls: 'n2o-ps-sync-line' });
+      const again = card.createDiv({ cls: 'n2o-ps-sync-actions' })
+        .createEl('button', { cls: 'mod-cta', text: `Install ${PAPER} again` });
+      again.onclick = async () => {
+        again.disabled = true;
+        try {
+          await installTheme(this.app, (m) => line.setText(m));
+        } catch (e) {
+          line.setText(e instanceof Error ? e.message : String(e));
+          again.disabled = false;
+          return;
+        }
+        await this.plugin.readTheme();
+        this.display();
+      };
+      return;
+    }
     if (status === 'active') return;
 
     const card = el.createDiv({ cls: 'n2o-ps-sync' });

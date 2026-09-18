@@ -48,6 +48,8 @@ export default class N2OPaperSettingsPlugin extends Plugin {
   open: string[] = [];
   spec: ParseResult = EMPTY_SPEC;
   autoInstallTried = false;
+  /** Kept so a theme or mode change can redraw the tab while it is open. */
+  private tab: N2OPaperSettingsTab | null = null;
 
   async onload(): Promise<void> {
     const stored = (await this.loadData()) as StoredData | null;
@@ -57,13 +59,20 @@ export default class N2OPaperSettingsPlugin extends Plugin {
     this.autoInstallTried = stored?.autoInstallTried === true;
     await this.readTheme();
 
-    this.addSettingTab(new N2OPaperSettingsTab(this.app, this));
+    this.tab = new N2OPaperSettingsTab(this.app, this);
+    this.addSettingTab(this.tab);
 
     // Light and dark change which half of every themed colour is in force, and
     // a theme switch changes the control list entirely, so both re-run this.
+    // An open settings tab is redrawn too: it says whether these settings are
+    // being applied, and that sentence was left behind by a theme or mode
+    // change, still naming the theme the reader had just switched away from.
     this.registerEvent(
       this.app.workspace.on('css-change', () => {
-        void this.readTheme().then(() => this.refresh());
+        void this.readTheme().then(() => {
+          this.refresh();
+          if (this.tab?.containerEl.isConnected) this.tab.display();
+        });
       }),
     );
 
@@ -106,7 +115,10 @@ export default class N2OPaperSettingsPlugin extends Plugin {
    * hand afterwards.
    */
   private async fetchThemeOnce(): Promise<void> {
-    if (this.autoInstallTried || themeStatus(this.app) !== 'absent') return;
+    // Absent, or selected with an unreadable theme.css: the second case is a
+    // folder deleted by hand, where the tab would otherwise come up empty.
+    const wanted = themeStatus(this.app) === 'absent' || !this.spec.controls.length;
+    if (this.autoInstallTried || !wanted) return;
     this.autoInstallTried = true;
     await this.persist();
     try {
