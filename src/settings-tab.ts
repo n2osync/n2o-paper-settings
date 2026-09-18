@@ -288,7 +288,7 @@ export class N2OPaperSettingsTab extends PluginSettingTab {
         }))
       .addButton((b) => b
         .setButtonText('Reset all')
-        .setDestructive()
+        .setWarning()
         .onClick(async () => {
           const count = Object.keys(this.plugin.values).length;
           if (!count) { new Notice('Nothing to reset, everything is already at the theme default.'); return; }
@@ -477,7 +477,7 @@ class ConfirmModal extends Modal {
     this.contentEl.createEl('p', { text: this.text });
     new Setting(this.contentEl)
       .addButton((b) => b.setButtonText('Cancel').onClick(() => this.close()))
-      .addButton((b) => b.setButtonText(this.action).setDestructive().onClick(() => { this.close(); void this.onConfirm(); }));
+      .addButton((b) => b.setButtonText(this.action).setWarning().onClick(() => { this.close(); void this.onConfirm(); }));
   }
 
   onClose(): void {
