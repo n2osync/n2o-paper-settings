@@ -1,7 +1,15 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/n2o-wordmark-dark.svg">
+  <img src="images/n2o-wordmark.svg" alt="N2O" height="46">
+</picture>
+
 # N2O Paper Settings
 
 Colour, typography, layout and component controls for the
 [N2O Paper](https://github.com/n2osync/n2o-paper) theme, as a settings tab.
+
+Part of **N2O**, with [N2O Paper](https://github.com/n2osync/n2o-paper) for the
+look and [N2O Sync](https://n2osync.com) for Notion.
 
 ![The settings tab](images/top.jpg)
 
