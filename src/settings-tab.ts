@@ -10,16 +10,21 @@ import { App, Modal, Notice, PluginSettingTab, Setting } from 'obsidian';
 import type { Control } from './parse';
 import { brandMark, renderSyncRow } from './n2o-sync';
 import { installTheme, selectTheme, themeStatus, THEME_NAME as PAPER } from './theme-install';
-import type { Values } from './apply';
-import { effective, propsFor } from './apply';
+import { effective, propsFor, sanitize } from './apply';
 import type N2OPaperSettingsPlugin from './main';
-import { EVERY_THEME } from './main';
 
-const THEME_NAME = 'N2O Paper';
+/** Which tab the panel is showing. Persisted, so it opens where you left it. */
+export type TabId = string;
 
 /** A section, and the subsections folded inside it. */
 interface Group {
   title: string;
+  /** Carried from the heading that opened this group, e.g. "Advanced". */
+  badge?: string;
+  /** Section only: its groups render open instead of folded. */
+  flat?: boolean;
+  /** Section only: no header drawn. */
+  hideTitle?: boolean;
   controls: Control[];
   children: Group[];
 }
@@ -28,6 +33,8 @@ export class N2OPaperSettingsTab extends PluginSettingTab {
   private plugin: N2OPaperSettingsPlugin;
   private query = '';
   private groupsEl: HTMLDivElement | null = null;
+  /** The tab bar, so a search can step it back without a full redraw. */
+  private tabsEl: HTMLDivElement | null = null;
   /** Colour swatches showing the page's live value, refreshed when a class control changes it. */
   private liveSwatches: (() => void)[] = [];
 
@@ -64,6 +71,26 @@ export class N2OPaperSettingsTab extends PluginSettingTab {
     win.setTimeout(restore, 60);
   }
 
+  /**
+   * ONE TAB PER SECTION, and the tab is the section's header.
+   *
+   * The first split here was Theme against General, which sorted by what KIND
+   * of thing something is when the problem was always how much sits on one
+   * screen: it put 118 controls behind one tab and four rarely-touched rows
+   * behind the other, so the bar bought almost nothing. Six sections is the
+   * split that does something. Each tab is four to seven groups, which is one
+   * screen, and the second rank disappears because the tab IS the heading.
+   *
+   * Three things sit ABOVE the bar and are never tabbed:
+   *
+   *   the notices     they say why a control is doing nothing, and an answer
+   *                   behind an unclicked tab is no answer
+   *   the theme card  drawn only when the theme is missing or not active, in
+   *                   which case the whole panel is inert and the one control
+   *                   that fixes it must not be buried in General
+   *   the filter      it searches every section, not the open one, so a hit in
+   *                   a tab you are not on is still found
+   */
   private render(): void {
     const { containerEl } = this;
     containerEl.empty();
@@ -72,47 +99,76 @@ export class N2OPaperSettingsTab extends PluginSettingTab {
 
     const { controls, problems } = this.plugin.spec;
 
-    // One box at the top, two slim rows: the theme this tab is for, and the
-    // sync plugin. They were two tall cards with the scope control and a
-    // warning wedged between them.
-    const top = containerEl.createDiv({ cls: 'n2o-ps-top' });
-    const themeCardShown = this.renderThemeCard(top);
-    renderSyncRow(this.app, top, () => this.display());
+    if (!controls.length) {
+      this.renderThemeCard(containerEl.createDiv({ cls: 'n2o-ps-top' }));
+      return;
+    }
 
-    if (!controls.length) return;
+    this.renderNotices(containerEl, problems);
+    this.renderThemeCard(containerEl.createDiv({ cls: 'n2o-ps-top' }));
 
-    this.renderScope(containerEl);
+    const sections = this.groups();
+    const ids = sections.map((s) => s.title);
+    const active = ids.includes(this.plugin.activeTab) ? this.plugin.activeTab : ids[0];
 
-    // A reader whose settings are parked is told so, rather than left
-    // wondering why a slider does nothing. The theme card already says it when
-    // it is on screen, so this is the dark-mode case and the odd scope.
+    /* ONLY WHAT IS TRUE ON EVERY TAB LIVES UP HERE. The sync row says which
+     * other N2O plugin is in this vault, which does not change as you move
+     * between tabs. Export and Import are not like that: they are a thing you
+     * do once, so they sit at the foot of the first tab rather than riding
+     * above all six. */
+    renderSyncRow(this.app, containerEl.createDiv({ cls: 'n2o-ps-top' }), () => this.display());
+
+    /* THE FILTER IS ABOVE THE BAR BECAUSE IT SEARCHES ACROSS IT. It sat under
+     * the tabs, which says "this searches General", and it does not: it walks
+     * every section and returns hits from tabs you are not on. Where a control
+     * sits is what it claims. */
+    this.renderFilter(containerEl);
+
+    const bar = containerEl.createDiv({ cls: 'n2o-ps-tabs' });
+    this.tabsEl = bar;
+    for (const id of ids) {
+      // No tab is the active one mid-search, or the bar claims you are in
+      // General while the results in front of you came from Code.
+      const b = bar.createEl('button', {
+        cls: 'n2o-ps-tab' + (id === active ? ' is-active' : ''),
+        text: id,
+      });
+      b.addEventListener('click', () => {
+        if (this.plugin.activeTab === id) return;
+        this.plugin.activeTab = id;
+        void this.plugin.persist();
+        this.query = '';
+        this.display();
+      });
+    }
+
+    this.renderGroups(containerEl);
+  }
+
+  /** Anything that says these settings are not reaching the page. Never tabbed. */
+  private renderNotices(host: HTMLElement, problems: string[]): void {
     if (this.plugin.lightOnlyInDark()) {
-      const note = containerEl.createDiv({ cls: 'n2o-ps-problems' });
+      const note = host.createDiv({ cls: 'n2o-ps-problems' });
       note.createEl('strong', { text: 'N2O Paper is a light theme, and Obsidian is in dark mode.' });
       note.createDiv({
         text: "In dark mode the theme steps aside and Obsidian's own dark look shows, so nothing here is applied. Your values are kept for when you switch back to light.",
       });
-    } else if (!this.plugin.isActive() && !themeCardShown) {
-      const note = containerEl.createDiv({ cls: 'n2o-ps-problems' });
+    } else if (!this.plugin.isActive()) {
+      const note = host.createDiv({ cls: 'n2o-ps-problems' });
       note.createEl('strong', {
-        text: `These settings apply to "${this.plugin.scope}", and the current theme is "${this.plugin.activeTheme() || 'Obsidian default'}".`,
+        text: `These settings paint N2O Paper, and the current theme is "${this.plugin.activeTheme() || 'Obsidian default'}".`,
       });
       note.createDiv({
-        text: 'Nothing is being applied, so no other theme is touched. Your values are kept. Switch theme in Appearance, or change Apply to above.',
+        text: 'Nothing is being applied, so no other theme is touched. Your values are kept. Switch to N2O Paper under Appearance.',
       });
     }
 
-    this.renderToolbar(containerEl);
-
     if (problems.length) {
-      const warn = containerEl.createDiv({ cls: 'n2o-ps-problems' });
+      const warn = host.createDiv({ cls: 'n2o-ps-problems' });
       warn.createEl('strong', { text: `${problems.length} control(s) in the theme could not be read:` });
       const list = warn.createEl('ul');
       for (const p of problems) list.createEl('li', { text: p });
     }
-
-    this.renderFilter(containerEl);
-    this.renderGroups(containerEl);
   }
 
   /**
@@ -129,21 +185,21 @@ export class N2OPaperSettingsTab extends PluginSettingTab {
   private groups(): Group[] {
     const out: Group[] = [];
     let section: Group | null = null;
-    let sub: Group | null = null;
+    let group: Group | null = null;
+    let cluster: Group | null = null;
+    const mk = (c: Control): Group => ({
+      title: c.title, badge: c.badge, flat: c.flat, hideTitle: c.hideTitle, controls: [], children: [],
+    });
 
     for (const c of this.plugin.spec.controls) {
       if (c.type === 'heading') {
-        if ((c.level ?? 1) >= 2 && section) {
-          sub = { title: c.title, controls: [], children: [] };
-          section.children.push(sub);
-        } else {
-          section = { title: c.title, controls: [], children: [] };
-          sub = null;
-          out.push(section);
-        }
+        const lv = c.level ?? 1;
+        if (lv >= 3 && group) { cluster = mk(c); group.children.push(cluster); }
+        else if (lv === 2 && section) { group = mk(c); cluster = null; section.children.push(group); }
+        else { section = mk(c); group = null; cluster = null; out.push(section); }
         continue;
       }
-      const target = sub ?? section;
+      const target = cluster ?? group ?? section;
       if (!target) {
         section = { title: 'Other', controls: [], children: [] };
         out.push(section);
@@ -153,7 +209,10 @@ export class N2OPaperSettingsTab extends PluginSettingTab {
       target.controls.push(c);
     }
 
-    const prune = (g: Group): Group => ({ ...g, children: g.children.filter((k) => k.controls.length).map(prune) });
+    const prune = (g: Group): Group => ({
+      ...g,
+      children: g.children.filter((k) => k.controls.length || k.children.length).map(prune),
+    });
     return out.map(prune).filter((g) => g.controls.length || g.children.length);
   }
 
@@ -177,7 +236,6 @@ export class N2OPaperSettingsTab extends PluginSettingTab {
         // to do it: focusing on every redraw dragged the list back to the top.
         if (this.query) window.setTimeout(() => t.inputEl.focus({ preventScroll: true }), 0);
       });
-    this.groupsEl = el.createDiv();
   }
 
   private renderGroups(el: HTMLElement): void {
@@ -191,72 +249,211 @@ export class N2OPaperSettingsTab extends PluginSettingTab {
     host.empty();
 
     const q = this.query.trim().toLowerCase();
-    const matches = (c: Control) => !q
-      || c.title.toLowerCase().includes(q)
+    /* Typing redraws the body only, so the bar's own state is set from here.
+     * Mid-search no tab is active: the results below come from every section,
+     * and a highlighted General while you are reading a hit from Code is the
+     * bar telling you something untrue. */
+    this.tabsEl?.classList.toggle('is-searching', !!q);
+    for (const b of Array.from(this.tabsEl?.children ?? [])) {
+      b.classList.toggle('is-muted', !!q);
+    }
+
+    const hit = (c: Control) => c.title.toLowerCase().includes(q)
       || c.id.toLowerCase().includes(q)
       || (c.description ?? '').toLowerCase().includes(q);
 
-    // Built once. Calling groups() inside the loop returns fresh objects, so an
-    // identity comparison against groups()[0] could never be true and the
-    // first section never opened on a first visit.
-    const groups = this.groups();
-    const firstVisit = this.plugin.open.length === 0;
-    let shown = 0;
+    /* A GROUP NAME IS A SEARCH TERM. "syntax colours" and "coil binding" are
+     * what the panel calls those things, so typing one has to find them even
+     * though no single control repeats the words. A group whose own name
+     * matches offers all of its controls. */
+    const named = new Set<Control>();
+    if (q) {
+      const walk = (g: Group) => {
+        const self = g.title.toLowerCase().includes(q);
+        const take = (k: Group) => { for (const c of k.controls) named.add(c); k.children.forEach(take); };
+        if (self) take(g);
+        g.children.forEach(walk);
+      };
+      this.groups().forEach(walk);
+    }
+    const matches = (c: Control) => !q || hit(c) || named.has(c);
 
-    for (const [i, g] of groups.entries()) {
-      const rendered = this.renderGroup(host, g, q, matches, firstVisit && i === 0, 0);
-      shown += rendered;
+    const sections = this.groups();
+    const ids = sections.map((s) => s.title);
+    const active = ids.includes(this.plugin.activeTab) ? this.plugin.activeTab : ids[0];
+
+    /* A SEARCH LEAVES THE TAB BEHIND. Filtering only the open tab would hide
+     * the hit somebody is looking for behind a tab they have not clicked,
+     * which is the whole failure the tabs were meant to fix. Every section is
+     * searched and each keeps its name, so a hit says where it lives. */
+    if (q) {
+      let shown = 0;
+      for (const g of sections) shown += this.renderSection(host, g, q, matches, true);
+      if (!shown) host.createDiv({ cls: 'n2o-ps-empty', text: `Nothing matches "${this.query}".` });
+      return;
     }
 
-    if (!shown) {
-      host.createDiv({ cls: 'n2o-ps-empty', text: `Nothing matches "${this.query}".` });
+    const g = sections.find((s) => s.title === active);
+    if (g) this.renderSection(host, g, q, matches, false);
+
+    /* The way out, at the foot of the first tab and nowhere else. A rule above
+     * it because it is not another group of controls: everything over the line
+     * changes how the theme looks, and this moves the whole set somewhere. */
+    if (active === ids[0]) {
+      host.createDiv({ cls: 'n2o-ps-rule' });
+      this.renderToolbar(host);
     }
   }
 
-  /** One section, and its subsections. Returns how many controls it showed. */
-  private renderGroup(
+  /**
+   * Is this control on screen yet?
+   *
+   * A control may name a class-toggle in `showWhen`. Until that toggle is on
+   * the control is not drawn at all, rather than drawn empty: an empty text
+   * box reads as broken, and "blank means the theme stays out of it" is a
+   * rule nobody can see. The toggle says what is happening, and the box
+   * appears once there is a decision to make.
+   */
+  private revealed(c: Control): boolean {
+    return !c.showWhen || this.plugin.values[c.showWhen] === true;
+  }
+
+  /** Every control that some other control's `showWhen` points at. */
+  private gatesOthers(id: string): boolean {
+    return this.plugin.spec.controls.some((c) => c.showWhen === id);
+  }
+
+  /**
+   * One section: a plain header on the background, then a card per group.
+   *
+   * Obsidian's own settings pages are the model. "Account" and "Font" are bold
+   * text sitting on the background, each owning one short card of hairline
+   * separated rows, and nothing on those pages collapses. We had copied the
+   * structure and kept our own chrome: a title inside a card with a fold on
+   * it, which is what made 118 controls read as a wall no matter how well
+   * they were grouped.
+   *
+   * Nothing folds any more. The headers are the landmarks and the filter is
+   * how you get somewhere directly. Counts stay, against Obsidian's habit,
+   * because they say how much sits behind a name before you scroll into it.
+   */
+  private renderSection(
     host: HTMLElement,
     g: Group,
     q: string,
     matches: (c: Control) => boolean,
-    openByDefault: boolean,
-    depth: number,
+    showHeader = true,
   ): number {
-    const own = g.controls.filter(matches);
-    const childHits = g.children.map((k) => ({ group: k, hits: k.controls.filter(matches) }));
+    const shows = (c: Control) => matches(c) && this.revealed(c);
+    const own = g.controls.filter(shows);
+    const deep = (k: Group): Control[] => [...k.controls, ...k.children.flatMap(deep)];
+    const childHits = g.children.map((k) => ({ group: k, hits: deep(k).filter(shows) }));
     const total = own.length + childHits.reduce((a, k) => a + k.hits.length, 0);
     if (!total) return 0;
 
-    const all = g.controls.length + g.children.reduce((a, k) => a + k.controls.length, 0);
+    /* hideTitle suppresses the header on the section's own tab, where the tab
+     * is the heading. In SEARCH RESULTS it has to come back: a hit with no
+     * section name does not say which tab it lives in, which is the one
+     * thing a result has to tell you. */
+    if (showHeader && (q || !g.hideTitle)) {
+      const head = host.createDiv({ cls: 'n2o-ps-section-head' });
+      head.createSpan({ cls: 'n2o-ps-section-title', text: g.title });
+      head.createSpan({ cls: 'n2o-ps-count', text: String(total) });
+    }
 
-    const details = host.createEl('details', { cls: depth ? 'n2o-ps-group n2o-ps-sub' : 'n2o-ps-group' });
-    // A search opens everything it matched; otherwise remember what the user
-    // left open, and open the first section on a first visit so the tab is
-    // not a list of closed headings.
-    details.open = q ? true : this.plugin.open.includes(g.title) || openByDefault;
+    if (own.length) this.renderCard(host, null, undefined, g, own, q, matches, false, !!g.hideTitle);
+    for (const k of childHits) {
+      if (!k.hits.length) continue;
+      this.renderCard(host, k.group.title, k.group.badge, k.group,
+                      k.group.controls.filter(shows), q, matches, !g.flat, !!g.hideTitle);
+    }
+    return total;
+  }
 
-    const summary = details.createEl('summary', { cls: 'n2o-ps-group-summary' });
-    summary.createSpan({ cls: 'n2o-ps-group-title', text: g.title });
-    summary.createSpan({
-      cls: 'n2o-ps-group-count',
-      text: q ? `${total} of ${all}` : String(all),
-    });
+  /**
+   * A group: its name on the background, its controls in one card.
+   *
+   * SMART FOLDING, and the smart part is WHERE the fold goes. Folding the
+   * whole "Headings, level by level" group put one triangle in front of 19
+   * rows, which is the same wall with a lid on it: you open it and you are
+   * back to scrolling H1 through H6. The fold belongs at the level somebody
+   * actually thinks in, so each heading level folds on its own and the group
+   * around them stays open.
+   *
+   * A group with no natural split inside it (Syntax colours, 11 rows of one
+   * kind) still folds as a whole, because there is nothing smaller to fold.
+   */
+  private renderCard(
+    host: HTMLElement,
+    title: string | null,
+    badge: string | undefined,
+    g: Group,
+    controls: Control[],
+    q: string,
+    matches: (c: Control) => boolean,
+    fold: boolean,
+    /** The section drew no header, so these names are its top rank. */
+    lead: boolean,
+  ): void {
+    const clusters = g.children
+      .map((k) => ({ group: k, hits: k.controls.filter((c) => matches(c) && this.revealed(c)) }))
+      .filter((k) => k.hits.length);
 
-    details.addEventListener('toggle', () => {
+    const head = (into: HTMLElement, tag: 'div' | 'summary', cls: string, n: number) => {
+      const h = into.createEl(tag, { cls: lead ? `${cls} n2o-ps-lead` : cls });
+      h.createSpan({ cls: 'n2o-ps-card-title', text: title ?? '' });
+      if (badge) h.createSpan({ cls: 'n2o-ps-group-badge', text: badge });
+      h.createSpan({ cls: 'n2o-ps-count', text: String(n) });
+      return h;
+    };
+    const total = controls.length + clusters.reduce((a, k) => a + k.hits.length, 0);
+
+    // Every group folds, except in a section that declares itself flat.
+    if (title && fold) {
+      const det = host.createEl('details', { cls: 'n2o-ps-fold' });
+      det.open = q ? true : this.plugin.open.includes(title);
+      head(det, 'summary', 'n2o-ps-card-head n2o-ps-card-head-fold', total);
+      this.rememberFold(det, title, q);
+      this.fillCard(det, controls, clusters, title, q);
+      return;
+    }
+
+    if (title) head(host, 'div', 'n2o-ps-card-head', total);
+    this.fillCard(host, controls, clusters, title, q);
+  }
+
+  /** The card itself: plain rows, then a fold per cluster. */
+  private fillCard(
+    host: HTMLElement,
+    controls: Control[],
+    clusters: { group: Group; hits: Control[] }[],
+    title: string | null,
+    q: string,
+  ): void {
+    const card = host.createDiv({ cls: 'n2o-ps-card' });
+    for (const c of controls) this.renderControl(card, c);
+    for (const k of clusters) {
+      const key = `${title ?? ''} / ${k.group.title}`;
+      const det = card.createEl('details', { cls: 'n2o-ps-cluster' });
+      det.open = q ? true : this.plugin.open.includes(key);
+      const sum = det.createEl('summary', { cls: 'n2o-ps-cluster-head' });
+      sum.createSpan({ cls: 'n2o-ps-cluster-title', text: k.group.title });
+      sum.createSpan({ cls: 'n2o-ps-count', text: String(k.hits.length) });
+      this.rememberFold(det, key, q);
+      const body = det.createDiv({ cls: 'n2o-ps-cluster-body' });
+      for (const c of k.hits) this.renderControl(body, c);
+    }
+  }
+
+  /** Persist which folds the reader left open, keyed by a title that is unique. */
+  private rememberFold(det: HTMLDetailsElement, key: string, q: string): void {
+    det.addEventListener('toggle', () => {
       if (q) return; // a filtered view is temporary, do not remember it
       const set = new Set(this.plugin.open);
-      if (details.open) set.add(g.title); else set.delete(g.title);
+      if (det.open) set.add(key); else set.delete(key);
       this.plugin.open = [...set];
       void this.plugin.persist();
     });
-
-    const body = details.createDiv({ cls: 'n2o-ps-group-body' });
-    for (const c of own) this.renderControl(body, c);
-    for (const k of childHits) {
-      if (!k.hits.length) continue;
-      this.renderGroup(body, k.group, q, matches, false, depth + 1);
-    }
-    return total;
   }
 
   /**
@@ -346,55 +543,64 @@ export class N2OPaperSettingsTab extends PluginSettingTab {
    * useful, and also a way to wreck a theme you were only trying out. Safe by
    * default.
    */
-  private renderScope(el: HTMLElement): void {
-    const themes = this.plugin.installedThemes();
-    const setting = new Setting(el)
-      .setName('Apply to')
-      .setDesc('Which theme these settings paint. Anything else is left completely untouched.')
-      .addDropdown((d) => {
-        for (const t of themes) d.addOption(t, t === THEME_NAME ? `${t} (this theme)` : t);
-        d.addOption(EVERY_THEME, 'Every theme');
-        d.setValue(this.plugin.scope);
-        d.onChange((v) => {
-          this.plugin.scope = v;
-          void this.plugin.persist().then(() => this.display());
-        });
-      });
-
-    if (this.plugin.scope === EVERY_THEME) {
-      setting.setClass('n2o-ps-global');
-      const warn = el.createDiv({ cls: 'n2o-ps-problems' });
-      warn.createEl('strong', { text: 'Applying to every theme.' });
-      warn.createDiv({
-        text: 'Your colours and sizes will now paint over whatever theme is selected. The on and off switches are N2O Paper features and do nothing elsewhere.',
-      });
-    }
-  }
 
   private renderToolbar(el: HTMLElement): void {
-    new Setting(el)
-      .setName('Your settings')
+    /* A GROUP HEADING, not a row label. This is the last group on the tab and
+     * it has to read as one: at .setting-item-name size it sat a rank below
+     * "Paper or flat" directly above it, which says it belongs to that group
+     * rather than standing on its own. Same classes as every other group name
+     * in this section, lead included, so it cannot drift from them. */
+    const head = el.createDiv({ cls: 'n2o-ps-card-head n2o-ps-lead' });
+    head.createSpan({ cls: 'n2o-ps-card-title', text: 'Your settings' });
+
+    const card = el.createDiv({ cls: 'n2o-ps-card' });
+    new Setting(card)
       .setDesc('Export writes every value you have changed to the clipboard. Keep it somewhere. Import puts them back.')
       .addButton((b) => b
         .setButtonText('Export')
         .onClick(async () => {
-          await navigator.clipboard.writeText(JSON.stringify(this.plugin.values, null, 2));
-          new Notice(`Copied ${Object.keys(this.plugin.values).length} setting(s) to the clipboard.`);
+          // Clipboard writes reject on a denied permission and on some hosts
+          // have no clipboard at all. Unhandled, the button just did nothing.
+          try {
+            await navigator.clipboard.writeText(JSON.stringify(this.plugin.values, null, 2));
+            new Notice(`Copied ${Object.keys(this.plugin.values).length} setting(s) to the clipboard.`);
+          } catch {
+            new Notice('Could not write to the clipboard. Your settings are unchanged.');
+          }
         }))
       .addButton((b) => b
         .setButtonText('Import')
         .onClick(async () => {
-          const text = await navigator.clipboard.readText();
+          /* NOTHING IS WRITTEN UNTIL IT IS KNOWN GOOD. The old order assigned,
+           * persisted, and only then applied, so a value that threw on apply
+           * had already replaced the config it failed to become. */
+          let raw: unknown;
           try {
-            const parsed = JSON.parse(text) as Values;
-            if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new Error('not an object');
-            this.plugin.values = parsed;
-            await this.plugin.persist();
-            this.display();
-            new Notice(`Imported ${Object.keys(parsed).length} setting(s).`);
+            raw = JSON.parse(await navigator.clipboard.readText());
           } catch {
-            new Notice('That clipboard content is not an N2O Paper export.');
+            new Notice('Could not read an N2O Paper export from the clipboard. Nothing was changed.');
+            return;
           }
+
+          const controls = this.plugin.spec.controls;
+          if (!controls.length) {
+            new Notice('N2O Paper is not installed, so there is nothing to import into.');
+            return;
+          }
+
+          const result = sanitize(controls, raw);
+          if (!result || !Object.keys(result.values).length) {
+            new Notice('No N2O Paper settings in that clipboard content. Nothing was changed.');
+            return;
+          }
+
+          this.plugin.values = result.values;
+          await this.plugin.persist();
+          this.display();
+          const n = Object.keys(result.values).length;
+          new Notice(result.dropped
+            ? `Imported ${n} setting(s). Ignored ${result.dropped} this theme does not have.`
+            : `Imported ${n} setting(s).`);
         }))
       .addButton((b) => b
         .setButtonText('Reset all')
@@ -432,7 +638,11 @@ export class N2OPaperSettingsTab extends PluginSettingTab {
       case 'class-toggle':
         setting.addToggle((t) => t
           .setValue(current === true)
-          .onChange((v) => void set(v || undefined)));
+          // A toggle that gates another control has to redraw the tab, or the
+          // box it reveals does not appear until the next visit.
+          .onChange((v) => void set(v || undefined).then(() => {
+            if (this.gatesOthers(c.id)) this.display();
+          })));
         break;
 
       case 'class-select':

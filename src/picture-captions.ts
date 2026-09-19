@@ -46,6 +46,7 @@
  * An alt with no pipe is left exactly as it is, so every picture that works
  * today keeps working, with or without this plugin installed.
  */
+import { FLAGS } from './embed-flags';
 import { MarkdownRenderChild } from 'obsidian';
 import type { MarkdownPostProcessorContext } from 'obsidian';
 
@@ -54,7 +55,6 @@ import type { MarkdownPostProcessorContext } from 'obsidian';
  * `src/css/48-embed-flags.css` and `48d-aged-photos.css`; a word missing here
  * is a word that ends up printed as part of a caption.
  */
-const FLAGS = new Set(['left', 'right', 'round', 'aged', 'seamless', 'torn']);
 
 /** A bare file name is not a caption. The same list the theme's rule excludes. */
 const IMAGE_FILE = /\.(png|jpe?g|gif|webp|svg|avif|bmp)$/i;

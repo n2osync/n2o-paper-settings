@@ -1,13 +1,15 @@
 {
   "name": "n2o-paper-settings",
-  "version": "1.0.11",
+  "version": "1.1.0",
   "description": "Settings companion for the N2O Paper Obsidian theme",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "tsc --noEmit && node esbuild.config.mjs production",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check": "node scripts/check-embed-flags.mjs && node scripts/check-import.mjs",
+    "release": "node scripts/release.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

@@ -128,9 +128,36 @@ export async function installSync(app: App, onProgress: (m: string) => void): Pr
   const dir = `${app.vault.configDir}/plugins/${SYNC_ID}`;
   if (!(await app.vault.adapter.exists(dir))) await app.vault.adapter.mkdir(dir);
   for (const name of REQUIRED_ASSETS) await app.vault.adapter.writeBinary(`${dir}/${name}`, files[name]);
+  await leaveInstallMarker(app, dir);
   await plugins(app)?.loadManifests?.();
   onProgress('Turning it on...');
   await enableSync(app);
+}
+
+/**
+ * Say who installed it, once, in the folder we just wrote.
+ *
+ * Somebody reading in this theme who presses the button above is the whole
+ * reason the theme is free, and until now that install was invisible: the
+ * account it eventually creates looks exactly like somebody who found N2O on
+ * their own. N2O Sync reads this file on its first connect, sends the one word
+ * in it, and DELETES it, so it rides exactly one connect and cannot re-stamp an
+ * account later.
+ *
+ * Failure is swallowed on purpose. Nobody is waiting on it, there is nothing a
+ * person could fix, and an attribution note must never be the reason an install
+ * fails. Worst case the install is simply not attributed, which is what every
+ * install did before this existed.
+ */
+async function leaveInstallMarker(app: App, dir: string): Promise<void> {
+  try {
+    await app.vault.adapter.write(
+      `${dir}/install-source.json`,
+      JSON.stringify({ source: 'n2o-paper-settings', at: new Date().toISOString() }, null, 2),
+    );
+  } catch {
+    /* not attributed, which is no worse than before */
+  }
 }
 
 const SVG_NS = 'http://www.w3.org/2000/svg';

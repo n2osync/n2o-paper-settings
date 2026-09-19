@@ -1,5 +1,5 @@
 /**
- * N2O Paper Settings.
+ * N2O Settings.
  *
  * A theme is CSS and cannot draw a settings tab, so the controls N2O Paper
  * declares need a plugin to render them. This is that plugin, and it is the
@@ -14,8 +14,9 @@
 import { Plugin, Notice } from 'obsidian';
 import { parseSettingsBlock, type ParseResult } from './parse';
 import { apply, reset, type Values } from './apply';
-import { N2OPaperSettingsTab } from './settings-tab';
+import { N2OPaperSettingsTab, type TabId } from './settings-tab';
 import { registerPictureCaptions } from './picture-captions';
+import { registerImageMenu } from './image-menu';
 import { FontPicker, fontClasses } from './per-note-font';
 import { installTheme, themeStatus } from './theme-install';
 
@@ -30,23 +31,22 @@ function customCss(app: unknown): CustomCss | undefined {
 }
 
 /** `*` means every theme. Anything else is a theme name to bind to. */
-export const EVERY_THEME = '*';
 
 interface StoredData {
-  /** Which theme these values apply to. A name, or EVERY_THEME. */
-  scope: string;
   values: Values;
   /** Section titles the user has left expanded. Remembered so a tab that was
    *  set up once does not need setting up again on every visit. */
   open?: string[];
+  /** The tab the panel was last showing. */
+  activeTab?: TabId;
   /** Whether the first load has already gone looking for the theme. */
   autoInstallTried?: boolean;
 }
 
 export default class N2OPaperSettingsPlugin extends Plugin {
   values: Values = {};
-  scope: string = THEME_NAME;
   open: string[] = [];
+  activeTab: TabId = '';
   spec: ParseResult = EMPTY_SPEC;
   autoInstallTried = false;
   /** Kept so a theme or mode change can redraw the tab while it is open. */
@@ -55,8 +55,8 @@ export default class N2OPaperSettingsPlugin extends Plugin {
   async onload(): Promise<void> {
     const stored = (await this.loadData()) as StoredData | null;
     this.values = stored?.values ?? {};
-    this.scope = stored?.scope ?? THEME_NAME;
     this.open = stored?.open ?? [];
+    this.activeTab = stored?.activeTab ?? '';
     this.autoInstallTried = stored?.autoInstallTried === true;
     await this.readTheme();
 
@@ -67,6 +67,7 @@ export default class N2OPaperSettingsPlugin extends Plugin {
      * caption is the alt text and CSS cannot strip the flag word out of it.
      * This computes the leftover and hands it to the theme on an attribute. */
     registerPictureCaptions((fn) => this.registerMarkdownPostProcessor(fn));
+    registerImageMenu(this);
 
     // Light and dark change which half of every themed colour is in force, and
     // a theme switch changes the control list entirely, so both re-run this.
@@ -168,11 +169,6 @@ export default class N2OPaperSettingsPlugin extends Plugin {
     return customCss(this.app)?.theme ?? '';
   }
 
-  /** Every theme installed in this vault, for the Apply to picker. */
-  installedThemes(): string[] {
-    return Object.keys(customCss(this.app)?.themes ?? {}).sort();
-  }
-
   /**
    * Should the values be on screen right now?
    *
@@ -186,8 +182,7 @@ export default class N2OPaperSettingsPlugin extends Plugin {
     // written there would be the half measure the theme refuses. Values are
     // kept for the switch back, and css-change re-runs this on every switch.
     if (this.lightOnlyInDark()) return false;
-    if (this.scope === EVERY_THEME) return true;
-    return this.activeTheme() === this.scope;
+    return this.activeTheme() === THEME_NAME;
   }
 
   /**
@@ -209,9 +204,9 @@ export default class N2OPaperSettingsPlugin extends Plugin {
 
   async persist(): Promise<void> {
     const data: StoredData = {
-      scope: this.scope,
-      values: this.values,
+      values: this.values,
       open: this.open,
+      activeTab: this.activeTab,
       autoInstallTried: this.autoInstallTried,
     };
     await this.saveData(data);

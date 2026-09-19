@@ -31,6 +31,22 @@ export interface Control {
   type: ControlType;
   level?: number;
   format?: string;
+  /** Id of a class-toggle that reveals this control. Hidden while that
+   *  toggle is off, so a setting nobody has opted into cannot sit on screen
+   *  looking broken. An empty text box is not a default, it is a question. */
+  showWhen?: string;
+  /** A word shown beside a HEADING, marking what kind of group it is
+   *  ("Advanced"). The groups that carry it used to live under a separate
+   *  Advanced section; folding them in made the panel one list and lost the
+   *  warning, so the warning moves onto the group itself. */
+  badge?: string;
+  /** On a SECTION heading: its groups do not fold. For the short section a
+   *  reader meets first, where a fold is one click between them and the
+   *  handful of choices that change everything. */
+  flat?: boolean;
+  /** On a SECTION heading: draw no header at all. The section a reader
+   *  lands on needs no name; it is simply what is on screen. */
+  hideTitle?: boolean;
   default?: string;
   defaultLight?: string;
   defaultDark?: string;
@@ -88,6 +104,10 @@ export function parseSettingsBlock(css: string): ParseResult {
     };
     if (f.level) control.level = Number(f.level);
     if (f.format) control.format = f.format;
+    if (f.showWhen) control.showWhen = String(f.showWhen);
+    if (f.badge) control.badge = String(f.badge);
+    if (f.flat) control.flat = String(f.flat) === 'true';
+    if (f.hideTitle) control.hideTitle = String(f.hideTitle) === 'true';
     if (f.default !== undefined) control.default = f.default;
     if (f['default-light'] !== undefined) control.defaultLight = f['default-light'];
     if (f['default-dark'] !== undefined) control.defaultDark = f['default-dark'];

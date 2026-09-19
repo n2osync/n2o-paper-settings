@@ -1,4 +1,4 @@
-/* N2O Paper Settings
+/* N2O Settings
  *
  * Obsidian 1.13 draws every .setting-item as its own card: near-white,
  * 12px radius, 8px gap, 16px padding. Nesting those
@@ -10,96 +10,70 @@
  * rhythm as Obsidian's own cards rather than fighting it.
  */
 
-.n2o-ps-group {
-  background: var(--background-primary-alt);
-  border-radius: 12px;
-  margin: 0 0 8px;
-  overflow: hidden;
-}
-
-.n2o-ps-group-summary {
+/* SECTION HEADER: bold text on the background, never inside a card.
+   Obsidian's own "Account" and "Font" headers sit this way, and copying the
+   structure while keeping a title inside a card with a fold on it is what
+   made 118 controls read as a wall however well they were grouped. */
+.n2o-ps-section-head {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 10px;
-  padding: 16px;
-  cursor: pointer;
-  list-style: none;
+  margin: 34px 0 10px;
+  padding: 0 4px;
+}
+.n2o-ps-section-head:first-child { margin-top: 14px; }
+
+.n2o-ps-section-title {
+  flex: 1;
+  font-size: var(--font-ui-large, 16px);
+  font-weight: var(--font-bold, 700);
+  color: var(--text-normal);
+}
+
+/* GROUP HEADER: quieter, sentence case, directly above its own card. */
+.n2o-ps-card-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 16px 0 6px;
+  padding: 0 4px;
+}
+/* ONE SIZE FOR EVERY GROUP NAME, folded or open. They were two styles: a
+   small muted caption above an open group, a full-weight row for a folded
+   one. Same thing, named the same way, at two sizes, so the panel read as
+   two different lists depending which section you were looking at. */
+.n2o-ps-card-title {
+  flex: 1;
+  font-size: var(--font-ui-medium, 15px);
   font-weight: var(--font-semibold, 600);
+  color: var(--text-normal);
 }
 
-.n2o-ps-group-summary::-webkit-details-marker { display: none; }
-
-/* Our own disclosure triangle, so it turns with the section instead of
- * sitting wherever the platform decides to draw one. */
-.n2o-ps-group-summary::before {
-  content: '';
-  flex: none;
-  width: 0;
-  height: 0;
-  border-left: 5px solid currentColor;
-  border-top: 4px solid transparent;
-  border-bottom: 4px solid transparent;
-  opacity: 0.45;
-  transition: transform 120ms ease;
-}
-
-.n2o-ps-group[open] > .n2o-ps-group-summary::before { transform: rotate(90deg); }
-.n2o-ps-group-summary:hover { background: var(--background-modifier-hover); }
-.n2o-ps-group-summary:hover::before { opacity: 0.8; }
-
-.n2o-ps-group-title { flex: 1; }
-
-.n2o-ps-group-count {
-  font-weight: normal;
+/* Kept against Obsidian's habit: a count says how much is behind a name
+   before you scroll into it, which is the one thing folding used to tell you. */
+.n2o-ps-count {
   font-size: var(--font-ui-smaller, 12px);
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
 }
 
-.n2o-ps-group-body { padding: 0; }
+/* CARD: one per group, a few hairline separated rows. Small on purpose.
+   One card per SECTION was the other half of the wall. */
+.n2o-ps-card {
+  background: var(--background-primary-alt);
+  border-radius: 12px;
+  overflow: hidden;
+}
 
-/* Flatten Obsidian's per-row card inside a section. Same padding as the
- * summary above it, so every label in the tab starts on one vertical line. */
-.n2o-ps-group-body > .setting-item {
-  background: transparent;
+.n2o-ps-card > .setting-item {
+  background: none;
+  border: none;
   border-radius: 0;
   margin: 0;
   padding: 14px 16px;
   border-top: 1px solid var(--background-modifier-border);
 }
-
-/* The summary is already a divider for the first row. */
-.n2o-ps-group[open] > .n2o-ps-group-summary { border-bottom: 1px solid var(--background-modifier-border); }
-.n2o-ps-group-body > .setting-item:first-child { border-top: none; }
-
-/* A subsection folded inside a section.
- *
- * It reads as contained, not as another row, or the
- * fold buys nothing. So: no card of its own, an indent, a quieter heading,
- * and a hairline to separate it from whatever came before. */
-.n2o-ps-group .n2o-ps-sub {
-  background: transparent;
-  border-radius: 0;
-  margin: 0;
-  border-top: 1px solid var(--background-modifier-border);
-}
-
-.n2o-ps-group .n2o-ps-sub > .n2o-ps-group-summary {
-  padding-left: 32px;
-  font-weight: normal;
-  color: var(--text-muted);
-}
-
-.n2o-ps-group .n2o-ps-sub[open] > .n2o-ps-group-summary {
-  font-weight: var(--font-semibold, 600);
-  color: var(--text-normal);
-}
-
-/* The controls inside a subsection line up under its title, not under the
- * outer section's. */
-.n2o-ps-sub > .n2o-ps-group-body > .setting-item {
-  padding-left: 32px;
-}
+.n2o-ps-card > .setting-item:first-child { border-top: none; }
 
 .n2o-ps-empty {
   padding: 16px;
@@ -190,3 +164,190 @@
 
 .n2o-ps-sync-line:empty { display: none; }
 .n2o-ps-sync-line.mod-warning { color: var(--text-error); }
+/* No margin under a closed header. It had one from before these rows
+   carried hairlines, and the two together left a dead strip between a
+   row and its own separator, which the hover highlight made obvious.
+   The row ends where its line is. */
+
+/* The "Advanced" mark beside a group name. Quiet on purpose: a signpost for
+   somebody scanning, not a warning. Every control in a badged group used to
+   live under the old Advanced section. */
+.n2o-ps-group-badge {
+  padding: 0.1em 0.45em;
+  border-radius: 3px;
+  font-size: 0.68em;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--background-modifier-border);
+  vertical-align: 0.12em;
+}
+
+/* A FOLDED GROUP HEADER IS A CONTROL, NOT A LABEL. It was styled as the quiet
+   caption that sits above an open card, which is right for a caption and wrong
+   for the only thing on screen: 22 of these stacked, all small and muted, read
+   as a list of nothing. A row you click carries the weight of a row.
+
+   No margin under it either. It had one from before these rows carried
+   hairlines, and the two together left a dead strip between a row and its own
+   separator, which the hover highlight made obvious. A row ends at its line. */
+.n2o-ps-fold { margin: 0; }
+.n2o-ps-card-head-fold {
+  margin: 0;
+  padding: 13px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  list-style: none;
+}
+.n2o-ps-card-head-fold::-webkit-details-marker { display: none; }
+.n2o-ps-card-head-fold::before {
+  content: '';
+  flex: none;
+  width: 0;
+  height: 0;
+  margin-right: 2px;
+  border-left: 6px solid currentColor;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  opacity: 0.55;
+  transition: transform 120ms ease;
+}
+.n2o-ps-fold[open] > .n2o-ps-card-head-fold::before { transform: rotate(90deg); }
+.n2o-ps-card-head-fold:hover { background: var(--background-modifier-hover); }
+.n2o-ps-card-head-fold:hover::before { opacity: 0.85; }
+.n2o-ps-card-head-fold .n2o-ps-count { font-size: var(--font-ui-small, 13px); }
+/* Stacked folds need a line between them or they read as one block. */
+.n2o-ps-fold + .n2o-ps-fold > .n2o-ps-card-head-fold {
+  border-top: 1px solid var(--background-modifier-border);
+  border-radius: 0;
+}
+/* The first section carries no header, so its first label needs the air the
+   header would have given it. */
+/* ...and NOT a fold header, which is always the first child of its own
+   details element. Unscoped, this put 16px above all 22 folded rows and
+   spread the list back out. */
+.n2o-ps-card-head:not(.n2o-ps-card-head-fold):first-child { margin-top: 16px; }
+
+/* A CLUSTER: one fold inside a card, for the level somebody actually thinks
+   in. Heading 1 through 6 each carry a colour, a size and a weight, and nobody
+   sets all eighteen at once; they come to change one level. Sits as a row in
+   the card so a closed cluster reads as a row, not as a second card. */
+.n2o-ps-cluster { border-top: 1px solid var(--background-modifier-border); }
+.n2o-ps-cluster:first-child { border-top: none; }
+.n2o-ps-cluster-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  cursor: pointer;
+  list-style: none;
+}
+.n2o-ps-cluster-head::-webkit-details-marker { display: none; }
+.n2o-ps-cluster-head::before {
+  content: '';
+  flex: none;
+  width: 0;
+  height: 0;
+  border-left: 5px solid currentColor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  opacity: 0.45;
+  transition: transform 120ms ease;
+}
+.n2o-ps-cluster[open] > .n2o-ps-cluster-head::before { transform: rotate(90deg); }
+.n2o-ps-cluster-head:hover { background: var(--background-modifier-hover); }
+.n2o-ps-cluster-title {
+  flex: 1;
+  font-weight: var(--font-semibold, 600);
+  color: var(--text-normal);
+}
+.n2o-ps-cluster-body > .setting-item {
+  background: none;
+  border: none;
+  border-radius: 0;
+  margin: 0;
+  padding: 12px 16px 12px 34px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+/* A SECTION THAT DREW NO HEADER hands its rank to its group names. The first
+   section has no title, so these four are the top-level landmarks a reader
+   meets, and at group size they read as a rank below the section titles that
+   follow them, which inverts the hierarchy on the one screen that matters. */
+.n2o-ps-card-head.n2o-ps-lead { margin: 30px 0 8px; }
+.n2o-ps-card-head.n2o-ps-lead .n2o-ps-card-title {
+  font-size: var(--font-ui-large, 16px);
+  font-weight: var(--font-bold, 700);
+}
+.n2o-ps-card-head.n2o-ps-lead:first-child { margin-top: 14px; }
+
+/* THE TAB BAR. Two things live in this panel: the controls, and the handful
+   of decisions you make once (which theme, which scope, the way out). The
+   second group was sitting permanently in front of the first. */
+.n2o-ps-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 8px 0 18px;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+/* 13px to match N2O Sync's own settings tabs exactly, which is where a
+   reader's eye has just come from. `--font-ui-small` is 14px under this
+   theme rather than Obsidian's 13, so asking for the variable gave a bar a
+   size larger than the neighbouring plugin. nowrap because "Start here" was
+   breaking across two lines and standing the whole bar up at 54px. */
+.n2o-ps-tab {
+  all: unset;
+  padding: 6px 10px;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: var(--font-semibold, 600);
+  color: var(--text-muted);
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -3px;
+}
+.n2o-ps-tab:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+.n2o-ps-tab.is-active {
+  color: var(--text-normal);
+  border-bottom-color: var(--interactive-accent, var(--text-normal));
+}
+
+/* Mid-search the bar is a map, not a selector: the results below come from
+   every section, so no tab is highlighted and the bar steps back. */
+.n2o-ps-tabs.is-searching { opacity: 0.55; }
+.n2o-ps-tab.is-muted.is-active { border-bottom-color: transparent; color: var(--text-muted); }
+
+/* The line between the controls and the way out. Everything above it changes
+   how the theme looks; below it moves the whole set somewhere else. */
+.n2o-ps-rule {
+  height: 1px;
+  margin: 26px 4px 18px;
+  background: var(--background-modifier-border);
+}
+
+/* RESET ALL HAS TO LOOK LIKE A BUTTON YOU CAN PRESS.
+   Obsidian's setWarning() gives mod-destructive plus mod-cta, which fills with
+   --background-modifier-error and writes --text-on-accent over it. Under this
+   theme that is `color-mix(#bb432a 14%, cream)` with WHITE text: about 1.3:1,
+   which does not read as dangerous, it reads as disabled. Measured on a live
+   instance, and it is why the button looked greyed out.
+
+   An outline instead: the error colour is a good #bb432a and carries 5.2:1 on
+   the card, and the filled hover puts white on the solid colour at 5.4:1. Both
+   legible, and destructive still looks unlike its two neighbours. */
+.n2o-ps-card button.mod-destructive,
+.n2o-ps-card button.mod-destructive.mod-cta {
+  background: transparent;
+  color: var(--text-error);
+  border: 1px solid var(--text-error);
+  box-shadow: none;
+  font-weight: var(--font-semibold, 600);
+}
+.n2o-ps-card button.mod-destructive:hover,
+.n2o-ps-card button.mod-destructive.mod-cta:hover {
+  background: var(--text-error);
+  color: #fff;
+  border-color: var(--text-error);
+}

@@ -113,3 +113,60 @@ export function reset(controls: Control[]): void {
     for (const cls of classesFor(c)) body.classList.remove(cls);
   }
 }
+
+/**
+ * Keep only what THIS theme can actually use, and say what was thrown away.
+ *
+ * Import used to accept any non-null non-array object, assign it, and persist
+ * it, and only then apply it. Three things went wrong at once:
+ *
+ *   - `{}` or a copied package.json passed, wiping every setting, and the
+ *     notice said "Imported 0 setting(s)" as though it had worked.
+ *   - a value carrying a space reached `body.classList.add`, which throws
+ *     InvalidCharacterError. The catch reported "not an N2O Paper export",
+ *     by which time data.json had ALREADY been overwritten: the old config
+ *     was gone and the message said nothing had happened.
+ *   - a select value from an older theme version was applied but could never
+ *     be removed, because reset() only knows the options the theme declares
+ *     today.
+ *
+ * Validating against the control list fixes all three, and it identifies an
+ * export better than a marker would: a file whose keys are this theme's
+ * control ids IS one, whatever it claims about itself.
+ *
+ * Returns null when the input is not an object at all. Pure, and tested.
+ */
+export function sanitize(controls: Control[], raw: unknown): { values: Values; dropped: number } | null {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null;
+
+  const byId = new Map(controls.filter((c) => c.type !== 'heading').map((c) => [c.id, c]));
+  const values: Values = {};
+  let dropped = 0;
+
+  for (const [key, v] of Object.entries(raw as Record<string, unknown>)) {
+    const c = byId.get(key);
+    const kept = c ? fits(c, v) : undefined;
+    if (kept === undefined) { dropped++; continue; }
+    values[key] = kept;
+  }
+  return { values, dropped };
+}
+
+/** The value this control would accept, or undefined to drop it. */
+function fits(c: Control, v: unknown): string | number | boolean | undefined {
+  switch (c.type) {
+    case 'class-toggle':
+      // Only `true` is ever stored; false means "left at the default", and a
+      // string "true" is not a toggle, it is a mistake that renders as one.
+      return v === true ? true : undefined;
+    case 'class-select':
+    case 'variable-select':
+      return typeof v === 'string' && c.options.includes(v) ? v : undefined;
+    case 'variable-number':
+    case 'variable-number-slider':
+      return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+    default:
+      // text and colours. A number is allowed: the UI writes one for sizes.
+      return typeof v === 'string' || typeof v === 'number' ? v : undefined;
+  }
+}
