@@ -8,6 +8,7 @@
  */
 import { App, Modal, Notice, PluginSettingTab, Setting } from 'obsidian';
 import type { Control } from './parse';
+import type { ImageToolSettings } from './image-tools';
 import { brandMark, renderSyncRow } from './n2o-sync';
 import { installTheme, selectTheme, themeStatus, THEME_NAME as PAPER } from './theme-install';
 import { effective, propsFor, sanitize } from './apply';
@@ -301,6 +302,7 @@ export class N2OPaperSettingsTab extends PluginSettingTab {
      * changes how the theme looks, and this moves the whole set somewhere. */
     if (active === ids[0]) {
       host.createDiv({ cls: 'n2o-ps-rule' });
+      this.renderImageTools(host);
       this.renderToolbar(host);
     }
   }
@@ -533,6 +535,174 @@ export class N2OPaperSettingsTab extends PluginSettingTab {
       this.display();
     };
     return true;
+  }
+
+  /**
+   * The picture menu is this plugin's own, not the theme's, so its settings
+   * are not in the theme's control list and need a card of their own. It sits
+   * above Your settings so that card stays last.
+   */
+  private renderImageTools(el: HTMLElement): void {
+    const head = el.createDiv({ cls: 'n2o-ps-card-head n2o-ps-lead' });
+    head.createSpan({ cls: 'n2o-ps-card-title', text: 'Pictures' });
+
+    const card = el.createDiv({ cls: 'n2o-ps-card' });
+
+    new Setting(card)
+      .setName('Sizes offered')
+      .setDesc('Comma separated list. Each entry is a percentage like 50% or a width like 600px; these become the resize rows in the menu.')
+      .addText((t) => t
+        .setValue(this.plugin.images.customSizes)
+        .onChange((v) => {
+          this.plugin.images.customSizes = v;
+          void this.plugin.persist();
+        }));
+
+    new Setting(card)
+      .setName('Ctrl or Cmd click')
+      .addDropdown((d) => d
+        .addOption('nothing', 'Do nothing')
+        .addOption('new-tab', 'Open in a new tab')
+        .addOption('default-app', 'Open in the default app')
+        .setValue(this.plugin.images.clickAction)
+        .onChange((v) => {
+          this.plugin.images.clickAction = v as ImageToolSettings['clickAction'];
+          void this.plugin.persist();
+        }));
+
+    new Setting(card)
+      .setName('Ask before deleting')
+      .addToggle((t) => t
+        .setValue(this.plugin.images.confirmDelete)
+        .onChange((v) => {
+          this.plugin.images.confirmDelete = v;
+          void this.plugin.persist();
+        }));
+
+    new Setting(card)
+      .setName('Resize with the wheel')
+      .addToggle((t) => t
+        .setValue(this.plugin.images.wheelResize)
+        .onChange((v) => {
+          this.plugin.images.wheelResize = v;
+          void this.plugin.persist();
+        }));
+
+    new Setting(card)
+      .setName('Wheel modifier')
+      .addDropdown((d) => d
+        .addOption('alt', 'Alt')
+        .addOption('ctrl', 'Ctrl or Cmd')
+        .addOption('shift', 'Shift')
+        .setValue(this.plugin.images.wheelModifier)
+        .onChange((v) => {
+          this.plugin.images.wheelModifier = v as ImageToolSettings['wheelModifier'];
+          void this.plugin.persist();
+        }));
+
+    new Setting(card)
+      .setName('Wheel step')
+      .setDesc('Percent of the current width one notch changes it by.')
+      .addSlider((s) => s
+        .setLimits(1, 50, 1)
+        .setValue(this.plugin.images.wheelStep)
+        .onChange((v) => {
+          this.plugin.images.wheelStep = v;
+          void this.plugin.persist();
+        }));
+
+    new Setting(card)
+      .setName('Invert wheel direction')
+      .addToggle((t) => t
+        .setValue(this.plugin.images.wheelInvert)
+        .onChange((v) => {
+          this.plugin.images.wheelInvert = v;
+          void this.plugin.persist();
+        }));
+
+    // These switches only choose which rows the menu shows; they do nothing
+    // themselves.
+    new Setting(card).setName('Rows shown in the menu').setHeading();
+    new Setting(card)
+      .setName('File name and size')
+      .addToggle((t) => t
+        .setValue(this.plugin.images.showFileInfo)
+        .onChange((v) => {
+          this.plugin.images.showFileInfo = v;
+          void this.plugin.persist();
+        }));
+    new Setting(card)
+      .setName('Copy image')
+      .addToggle((t) => t
+        .setValue(this.plugin.images.showCopyImage)
+        .onChange((v) => {
+          this.plugin.images.showCopyImage = v;
+          void this.plugin.persist();
+        }));
+    new Setting(card)
+      .setName('Copy local path')
+      .addToggle((t) => t
+        .setValue(this.plugin.images.showCopyPath)
+        .onChange((v) => {
+          this.plugin.images.showCopyPath = v;
+          void this.plugin.persist();
+        }));
+    new Setting(card)
+      .setName('Open in new tab')
+      .addToggle((t) => t
+        .setValue(this.plugin.images.showOpenInNewTab)
+        .onChange((v) => {
+          this.plugin.images.showOpenInNewTab = v;
+          void this.plugin.persist();
+        }));
+    new Setting(card)
+      .setName('Open to the right')
+      .addToggle((t) => t
+        .setValue(this.plugin.images.showOpenToRight)
+        .onChange((v) => {
+          this.plugin.images.showOpenToRight = v;
+          void this.plugin.persist();
+        }));
+    new Setting(card)
+      .setName('Open in new window')
+      .addToggle((t) => t
+        .setValue(this.plugin.images.showOpenInNewWindow)
+        .onChange((v) => {
+          this.plugin.images.showOpenInNewWindow = v;
+          void this.plugin.persist();
+        }));
+    new Setting(card)
+      .setName('Open in default app')
+      .addToggle((t) => t
+        .setValue(this.plugin.images.showOpenInDefaultApp)
+        .onChange((v) => {
+          this.plugin.images.showOpenInDefaultApp = v;
+          void this.plugin.persist();
+        }));
+    new Setting(card)
+      .setName('Show in the file manager')
+      .addToggle((t) => t
+        .setValue(this.plugin.images.showInSystemExplorer)
+        .onChange((v) => {
+          this.plugin.images.showInSystemExplorer = v;
+          void this.plugin.persist();
+        }));
+    new Setting(card)
+      .setName('Rename image')
+      .addToggle((t) => t
+        .setValue(this.plugin.images.showRename)
+        .onChange((v) => {
+          this.plugin.images.showRename = v;
+          void this.plugin.persist();
+        }));
+    new Setting(card)
+      .setName('Delete image and link')
+      .addToggle((t) => t
+        .setValue(this.plugin.images.showDelete)
+        .onChange((v) => {
+          this.plugin.images.showDelete = v;
+          void this.plugin.persist();
+        }));
   }
 
   /**

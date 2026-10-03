@@ -103,3 +103,17 @@ export function withCaption(inner: string, caption: string): string {
   const p = partsOf(inner);
   return buildEmbed({ ...p, caption: caption.trim() || null });
 }
+
+/**
+ * Replace the width, or clear it when given null.
+ *
+ * Obsidian reads the bare number in `![[x.png|500]]` as a width in pixels, so
+ * that is what a resize writes. A percentage cannot go here: the embed grammar
+ * has no unit, and `50%` would be read as a caption. Percentages are resolved
+ * against the picture's natural width by the caller, which is the only place
+ * that knows it.
+ */
+export function withWidth(inner: string, width: number | null): string {
+  const p = partsOf(inner);
+  return buildEmbed({ ...p, width: width && width > 0 ? String(Math.round(width)) : null });
+}

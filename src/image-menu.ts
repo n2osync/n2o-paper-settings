@@ -22,13 +22,14 @@
  * writing, so the editor is where the menu belongs and reading view keeps no
  * half-working copy of it.
  */
-import { Menu, Modal, Setting, type App, type Editor, type Plugin } from 'obsidian';
+import { Menu, Modal, Setting, TFile, type App, type Editor, type Plugin } from 'obsidian';
 import {
   embedAt,
   partsOf,
   toggleFlag,
   withCaption,
 } from './embed-flags';
+import { findEmbed } from './image-tools';
 
 /** The flags worth a menu row, in the order they are offered. */
 const OFFERED: { flag: string; label: string }[] = [
@@ -95,4 +96,35 @@ export function registerImageMenu(plugin: Plugin): void {
         }));
     }),
   );
+}
+
+/**
+ * The theme's flag rows, as an extra section for the picture menu.
+ *
+ * `image-tools.ts` owns right-clicking the rendered picture and knows the file
+ * and which occurrence was clicked; it does not know the theme's vocabulary.
+ * This supplies the rows, so the two menus the user could have had are one.
+ *
+ * The rewrite goes through the vault rather than the editor, because a picture
+ * right-clicked in reading view has no editor behind it.
+ */
+export function flagRowsFor(app: App) {
+  return (menu: Menu, t: { linkText: string; occurrence: number; noteFile: TFile | null }): void => {
+    if (!t.noteFile) return;
+    menu.addSeparator();
+    for (const { flag, label } of OFFERED) {
+      menu.addItem((item) =>
+        item.setTitle(label).onClick(async () => {
+          const note = t.noteFile;
+          if (!note) return;
+          const text = await app.vault.read(note);
+          const found = findEmbed(text, t.linkText, t.occurrence);
+          if (!found) return;
+          const next =
+            text.slice(0, found.start) + toggleFlag(found.inner, flag) + text.slice(found.end);
+          await app.vault.modify(note, next);
+        }),
+      );
+    }
+  };
 }

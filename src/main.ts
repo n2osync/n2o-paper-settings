@@ -16,7 +16,12 @@ import { parseSettingsBlock, type ParseResult } from './parse';
 import { apply, reset, type Values } from './apply';
 import { N2OPaperSettingsTab, type TabId } from './settings-tab';
 import { registerPictureCaptions } from './picture-captions';
-import { registerImageMenu } from './image-menu';
+import { registerImageMenu, flagRowsFor } from './image-menu';
+import {
+  registerImageTools,
+  DEFAULT_IMAGE_TOOLS,
+  type ImageToolSettings,
+} from './image-tools';
 import { FontPicker, fontClasses } from './per-note-font';
 import { installTheme, themeStatus } from './theme-install';
 
@@ -41,6 +46,8 @@ interface StoredData {
   activeTab?: TabId;
   /** Whether the first load has already gone looking for the theme. */
   autoInstallTried?: boolean;
+  /** What the right-click picture menu offers, and how it behaves. */
+  images?: Partial<ImageToolSettings>;
 }
 
 export default class N2OPaperSettingsPlugin extends Plugin {
@@ -49,6 +56,7 @@ export default class N2OPaperSettingsPlugin extends Plugin {
   activeTab: TabId = '';
   spec: ParseResult = EMPTY_SPEC;
   autoInstallTried = false;
+  images: ImageToolSettings = { ...DEFAULT_IMAGE_TOOLS };
   /** Kept so a theme or mode change can redraw the tab while it is open. */
   private tab: N2OPaperSettingsTab | null = null;
 
@@ -58,6 +66,9 @@ export default class N2OPaperSettingsPlugin extends Plugin {
     this.open = stored?.open ?? [];
     this.activeTab = stored?.activeTab ?? '';
     this.autoInstallTried = stored?.autoInstallTried === true;
+    /* Spread over the defaults rather than replacing them, so a stored file
+     * written by an older version is missing keys rather than broken. */
+    this.images = { ...DEFAULT_IMAGE_TOOLS, ...(stored?.images ?? {}) };
     await this.readTheme();
 
     this.tab = new N2OPaperSettingsTab(this.app, this);
@@ -68,6 +79,10 @@ export default class N2OPaperSettingsPlugin extends Plugin {
      * This computes the leftover and hands it to the theme on an attribute. */
     registerPictureCaptions((fn) => this.registerMarkdownPostProcessor(fn));
     registerImageMenu(this);
+    /* One menu, not two: the theme's own flag rows are handed to the picture
+     * menu as extras, so right-clicking a picture offers the file operations
+     * and the print flags together. */
+    registerImageTools(this, () => this.images, [flagRowsFor(this.app)]);
 
     // Light and dark change which half of every themed colour is in force, and
     // a theme switch changes the control list entirely, so both re-run this.
@@ -208,6 +223,7 @@ export default class N2OPaperSettingsPlugin extends Plugin {
       open: this.open,
       activeTab: this.activeTab,
       autoInstallTried: this.autoInstallTried,
+      images: this.images,
     };
     await this.saveData(data);
     this.refresh();

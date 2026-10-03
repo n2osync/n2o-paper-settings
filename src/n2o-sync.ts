@@ -4,9 +4,10 @@
  * The installer is N2O Sync Lite's (`n2o-lite/src/plugin/pro-installer.ts`),
  * ported, because Lite already ships it through the community store: nothing is
  * fetched until the person clicks Install, the disclosure Obsidian's developer
- * policies ask for sits next to the button, and nothing reaches disk until all
- * four release files pass verification. Keep the two in step: a change to what a
- * release contains, or to the pinned sql.js hash, has to land in both.
+ * policies ask for sits next to the button, and nothing reaches disk until
+ * every release file passes verification. Keep the two in step: a change to what
+ * a release contains has to land in both, and a unit test in the n2o repo fails
+ * when REQUIRED_ASSETS here disagrees with RELEASE_ASSETS in n2o/deploy.sh.
  */
 import { App, Notice, requestUrl } from 'obsidian';
 import { MARK_GEM, MARK_LETTERS, MARK_VIEWBOX } from './brand-paths';
@@ -17,11 +18,52 @@ const SYNC_ID = 'n2o';
 const LITE_ID = 'notion-pull-lite';
 const RELEASE_API_URL = 'https://api.github.com/repos/n2osync/n2o/releases/latest';
 const SITE_URL = 'https://n2osync.com';
-const REQUIRED_ASSETS = ['main.js', 'manifest.json', 'styles.css', 'sql-wasm.wasm'] as const;
+/** Every file the install needs. Must equal RELEASE_ASSETS in n2o/deploy.sh. */
+const REQUIRED_ASSETS = ['main.js', 'manifest.json', 'styles.css'] as const;
 type Asset = (typeof REQUIRED_ASSETS)[number];
 const MIN_MAIN_JS_BYTES = 100 * 1024;
-/** SHA-256 of sql.js 1.13.0's sql-wasm.wasm, the same pin N2O Sync Lite carries. */
-const SQL_WASM_SHA256 = '0734155c83e493983d1f2ff5b09a4fab6e35a32e9449c7e4e545756439f62d73';
+/**
+ * N2O's installer floor (MIN_INSTALLER_VERSION in n2o/src/shared/constants.ts):
+ * below it the installer has no node:sqlite and N2O refuses to start.
+ */
+const MIN_INSTALLER_VERSION = '1.9.10';
+
+/** The Obsidian installer's version, or undefined when it cannot be read. */
+function installerVersion(): string | undefined {
+  try {
+    const electron = (
+      window as unknown as { electron?: { remote?: { app?: { getVersion?: () => string } } } }
+    ).electron;
+    return electron?.remote?.app?.getVersion?.();
+  } catch {
+    return undefined;
+  }
+}
+
+/** True when dotted version `a` is below `b`. */
+function isBelow(a: string, b: string): boolean {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d !== 0) return d < 0;
+  }
+  return false;
+}
+
+/**
+ * Refuse an installer N2O cannot start on, with the sentence N2O Sync Lite
+ * shows. An unreadable version installs anyway: N2O then refuses itself.
+ */
+export function checkInstallerFloor(version: string | undefined = installerVersion()): void {
+  if (!version || !isBelow(version, MIN_INSTALLER_VERSION)) return;
+  throw new Error(
+    `N2O needs the Obsidian installer ${MIN_INSTALLER_VERSION} or newer. This one is ${version}. ` +
+      'Download the installer from https://obsidian.md/download, install it over this one (your vaults ' +
+      'and settings stay), and restart Obsidian. Updating from inside Obsidian is not enough: it ' +
+      'updates the app, never the installer. Nothing was installed.',
+  );
+}
 
 interface PluginApi {
   enabledPlugins?: Set<string>;
@@ -75,7 +117,7 @@ async function download(onProgress: (m: string) => void): Promise<Record<Asset, 
   return files;
 }
 
-async function verify(files: Record<Asset, ArrayBuffer>): Promise<void> {
+function verify(files: Record<Asset, ArrayBuffer>): void {
   let id: unknown;
   try {
     id = (JSON.parse(new TextDecoder().decode(files['manifest.json'])) as { id?: unknown }).id;
@@ -90,13 +132,6 @@ async function verify(files: Record<Asset, ArrayBuffer>): Promise<void> {
   }
   if (files['styles.css'].byteLength === 0) {
     throw new Error('The downloaded styles.css is empty. The download may be damaged; try again.');
-  }
-  const digest = await crypto.subtle.digest('SHA-256', files['sql-wasm.wasm']);
-  const hex = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
-  if (hex !== SQL_WASM_SHA256) {
-    throw new Error(
-      `sql-wasm.wasm failed its integrity check, so nothing was installed. Try again, or install from ${SITE_URL}.`,
-    );
   }
 }
 
@@ -121,9 +156,10 @@ export async function enableSync(app: App): Promise<void> {
 
 /** Download, verify, write, then enable. Nothing is written if any check fails. */
 export async function installSync(app: App, onProgress: (m: string) => void): Promise<void> {
+  checkInstallerFloor();
   const files = await download(onProgress);
   onProgress('Checking the files...');
-  await verify(files);
+  verify(files);
   onProgress('Installing...');
   const dir = `${app.vault.configDir}/plugins/${SYNC_ID}`;
   if (!(await app.vault.adapter.exists(dir))) await app.vault.adapter.mkdir(dir);
