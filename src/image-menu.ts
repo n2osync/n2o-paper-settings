@@ -1,44 +1,18 @@
 /**
- * Right-click a picture in the editor and set its flags there.
- *
- * ## The scenario
- *
- * The theme dresses every picture as a print: a warm white mount, a foot for
- * the caption, a lifted corner. Any one picture can opt out or change with a
- * flag written into the embed, `![[cabin.png|plain|A cabin in the pines]]`.
- * That is a good vocabulary and an awful interface: you have to know the seven
- * words exist, remember which order they go in, and type them without breaking
- * the caption or the width sitting in the same brackets.
- *
- * So the words get a menu. Right-click the embed, tick the flag, and the line
- * is rewritten for you.
- *
- * ## Editor only, deliberately
- *
- * `editor-menu` hands over the editor and the cursor, so the embed under the
- * pointer is known exactly. Reading view has no equivalent: you would catch a
- * DOM `contextmenu`, then map the node back to a line, which is a guess the
- * moment the same picture appears twice in one note. Flags are written while
- * writing, so the editor is where the menu belongs and reading view keeps no
- * half-working copy of it.
+ * The theme's picture flags (`![[cabin.png|plain|A caption]]`) as menu rows:
+ * in the editor's own menu when the cursor is on an embed, and as extra rows in
+ * the picture menu (`image-tools.ts`) when the picture itself is right-clicked.
  */
-import { Menu, Modal, Setting, TFile, type App, type Editor, type Plugin } from 'obsidian';
+import { Modal, Setting, type App, type Editor, type Menu, type Plugin, type TFile } from 'obsidian';
 import {
   embedAt,
   partsOf,
   toggleFlag,
   withCaption,
 } from './embed-flags';
-import { findEmbed } from './image-tools';
+import { findEmbed, updateNote } from './image-tools';
+import { PICTURE_FLAGS } from './actions';
 
-/** The flags worth a menu row, in the order they are offered. */
-const OFFERED: { flag: string; label: string }[] = [
-  { flag: 'plain', label: 'No print mount' },
-  { flag: 'aged', label: 'Aged print' },
-  { flag: 'round', label: 'Round' },
-  { flag: 'left', label: 'Float left' },
-  { flag: 'right', label: 'Float right' },
-];
 
 /** A one-field prompt, because Obsidian ships no inline text prompt. */
 class CaptionModal extends Modal {
@@ -81,7 +55,7 @@ export function registerImageMenu(plugin: Plugin): void {
       const current = partsOf(embed.inner);
 
       menu.addSeparator();
-      for (const { flag, label } of OFFERED) {
+      for (const { flag, label } of PICTURE_FLAGS) {
         menu.addItem((item) => item
           .setTitle(label)
           .setChecked(current.flags.includes(flag))
@@ -98,31 +72,27 @@ export function registerImageMenu(plugin: Plugin): void {
   );
 }
 
-/**
- * The theme's flag rows, as an extra section for the picture menu.
- *
- * `image-tools.ts` owns right-clicking the rendered picture and knows the file
- * and which occurrence was clicked; it does not know the theme's vocabulary.
- * This supplies the rows, so the two menus the user could have had are one.
- *
- * The rewrite goes through the vault rather than the editor, because a picture
- * right-clicked in reading view has no editor behind it.
- */
+/** The flags already on a rendered picture: the wrapper's alt for a wiki embed, the image's alt otherwise. */
+function flagsOn(el: HTMLImageElement): string[] {
+  const alt = el.closest('.internal-embed')?.getAttribute('alt') ?? el.getAttribute('alt') ?? '';
+  return partsOf(`x|${alt}`).flags;
+}
+
+/** The flag rows for the picture menu, ticked when set, written back through the vault. */
 export function flagRowsFor(app: App) {
-  return (menu: Menu, t: { linkText: string; occurrence: number; noteFile: TFile | null }): void => {
-    if (!t.noteFile) return;
+  return (menu: Menu, t: { linkText: string; occurrence: number; noteFile: TFile | null; transcluded: boolean; el: HTMLImageElement }): void => {
+    const note = t.noteFile;
+    if (!note || t.transcluded) return;
+    const set = flagsOn(t.el);
     menu.addSeparator();
-    for (const { flag, label } of OFFERED) {
+    for (const { flag, label } of PICTURE_FLAGS) {
       menu.addItem((item) =>
-        item.setTitle(label).onClick(async () => {
-          const note = t.noteFile;
-          if (!note) return;
-          const text = await app.vault.read(note);
-          const found = findEmbed(text, t.linkText, t.occurrence);
-          if (!found) return;
-          const next =
-            text.slice(0, found.start) + toggleFlag(found.inner, flag) + text.slice(found.end);
-          await app.vault.modify(note, next);
+        item.setTitle(label).setChecked(set.includes(flag)).onClick(() => {
+          void updateNote(app, note, (text) => {
+            const found = findEmbed(text, t.linkText, t.occurrence);
+            if (!found) return null;
+            return text.slice(0, found.start) + toggleFlag(found.inner, flag) + text.slice(found.end);
+          });
         }),
       );
     }

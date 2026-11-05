@@ -1,99 +1,70 @@
 /**
- * N2O Settings.
- *
- * A theme is CSS and cannot draw a settings tab, so the controls N2O Paper
- * declares need a plugin to render them. This is that plugin, and it is the
- * same shape Minimal has used for years: theme plus companion.
- *
- * It does NOT carry its own list of
- * controls. It reads the /* @settings *\/ block out of the installed
- * theme.css. One source of truth, so a control added to the theme appears
- * here with no code change, and one that is deleted takes its stored value
- * with it.
+ * N2O Settings: renders the controls N2O Paper declares in its theme.css,
+ * applies the values while N2O Paper is the active light theme, and adds the
+ * picture menu, the commands and a status-bar menu.
  */
-import { Plugin, Notice } from 'obsidian';
-import { parseSettingsBlock, type ParseResult } from './parse';
-import { apply, reset, type Values } from './apply';
-import { N2OPaperSettingsTab, type TabId } from './settings-tab';
+import { Menu, Notice, Plugin, parseYaml, setIcon } from 'obsidian';
+import { parseSettingsBlock, type Control, type ParseResult } from './parse';
+import { apply, effective, reset, store, type Values } from './apply';
+import { builtInLooks, lookMatches, withLook, type Look } from './looks';
+import { lookActions, type Action } from './actions';
+import { N2OPaperSettingsTab, optionLabel } from './settings-tab';
 import { registerPictureCaptions } from './picture-captions';
 import { registerImageMenu, flagRowsFor } from './image-menu';
-import {
-  registerImageTools,
-  DEFAULT_IMAGE_TOOLS,
-  type ImageToolSettings,
-} from './image-tools';
+import { registerImageTools, DEFAULT_IMAGE_TOOLS, type ImageToolSettings } from './image-tools';
 import { FontPicker, fontClasses } from './per-note-font';
-import { installTheme, themeStatus } from './theme-install';
-
-const THEME_NAME = 'N2O Paper';
+import { installTheme, themeStatus, THEME_NAME } from './theme-install';
 
 const EMPTY_SPEC: ParseResult = { name: '', id: '', controls: [], problems: [] };
 
 /** app.customCss is undocumented, so the cast lives here once. */
-interface CustomCss { theme: string; themes?: Record<string, unknown> }
+interface CustomCss { theme: string }
 function customCss(app: unknown): CustomCss | undefined {
   return (app as { customCss?: CustomCss }).customCss;
 }
 
-/** `*` means every theme. Anything else is a theme name to bind to. */
-
 interface StoredData {
   values: Values;
-  /** Section titles the user has left expanded. Remembered so a tab that was
-   *  set up once does not need setting up again on every visit. */
-  open?: string[];
-  /** The tab the panel was last showing. */
-  activeTab?: TabId;
   /** Whether the first load has already gone looking for the theme. */
   autoInstallTried?: boolean;
-  /** What the right-click picture menu offers, and how it behaves. */
   images?: Partial<ImageToolSettings>;
+  looks?: Look[];
 }
 
 export default class N2OPaperSettingsPlugin extends Plugin {
   values: Values = {};
-  open: string[] = [];
-  activeTab: TabId = '';
   spec: ParseResult = EMPTY_SPEC;
   autoInstallTried = false;
   images: ImageToolSettings = { ...DEFAULT_IMAGE_TOOLS };
-  /** Kept so a theme or mode change can redraw the tab while it is open. */
   private tab: N2OPaperSettingsTab | null = null;
+  /** The user's saved looks. */
+  savedLooks: Look[] = [];
+  private statusEl: HTMLElement | null = null;
+  private actions: Action[] = [];
 
   async onload(): Promise<void> {
-    const stored = (await this.loadData()) as StoredData | null;
-    this.values = stored?.values ?? {};
-    this.open = stored?.open ?? [];
-    this.activeTab = stored?.activeTab ?? '';
-    this.autoInstallTried = stored?.autoInstallTried === true;
-    /* Spread over the defaults rather than replacing them, so a stored file
-     * written by an older version is missing keys rather than broken. */
-    this.images = { ...DEFAULT_IMAGE_TOOLS, ...(stored?.images ?? {}) };
+    await this.loadStored();
     await this.readTheme();
 
     this.tab = new N2OPaperSettingsTab(this.app, this);
     this.addSettingTab(this.tab);
 
-    /* A picture with a flag on it cannot be captioned by the theme alone: the
-     * caption is the alt text and CSS cannot strip the flag word out of it.
-     * This computes the leftover and hands it to the theme on an attribute. */
     registerPictureCaptions((fn) => this.registerMarkdownPostProcessor(fn));
     registerImageMenu(this);
-    /* One menu, not two: the theme's own flag rows are handed to the picture
-     * menu as extras, so right-clicking a picture offers the file operations
-     * and the print flags together. */
     registerImageTools(this, () => this.images, [flagRowsFor(this.app)]);
 
-    // Light and dark change which half of every themed colour is in force, and
-    // a theme switch changes the control list entirely, so both re-run this.
-    // An open settings tab is redrawn too: it says whether these settings are
-    // being applied, and that sentence was left behind by a theme or mode
-    // change, still naming the theme the reader had just switched away from.
+    this.statusEl = this.addStatusBarItem();
+    this.statusEl.addClass('mod-clickable', 'n2o-ps-status');
+    setIcon(this.statusEl, 'palette');
+    this.statusEl.setAttr('aria-label', THEME_NAME);
+    this.registerDomEvent(this.statusEl, 'click', (ev) => this.quickMenu().showAtMouseEvent(ev));
+
+    // Light/dark and theme switches change what applies and which controls exist.
     this.registerEvent(
       this.app.workspace.on('css-change', () => {
         void this.readTheme().then(() => {
           this.refresh();
-          if (this.tab?.containerEl.isConnected) this.tab.display();
+          this.tab?.update();
         });
       }),
     );
@@ -104,7 +75,7 @@ export default class N2OPaperSettingsPlugin extends Plugin {
       checkCallback: (checking: boolean) => {
         const file = this.app.workspace.getActiveFile();
         const classes = fontClasses(this.spec);
-        if (!file || file.extension !== 'md' || !classes.length) return false;
+        if (!this.isActive() || !file || file.extension !== 'md' || !classes.length) return false;
         if (!checking) new FontPicker(this.app, classes, file).open();
         return true;
       },
@@ -116,10 +87,25 @@ export default class N2OPaperSettingsPlugin extends Plugin {
       callback: () => {
         void this.readTheme().then(() => {
           this.refresh();
-          new Notice(`N2O Paper: ${this.spec.controls.filter((c) => c.type !== 'heading').length} control(s) loaded.`);
+          this.tab?.update();
+          new Notice(`${THEME_NAME}: ${this.spec.controls.filter((c) => c.type !== 'heading').length} control(s) loaded.`);
         });
       },
     });
+
+    this.actions = lookActions(this);
+    for (const a of this.actions) {
+      this.addCommand({
+        id: a.id,
+        name: a.name,
+        icon: a.icon,
+        checkCallback: (checking: boolean) => {
+          if (!this.isActive() || !a.available()) return false;
+          if (!checking) a.run();
+          return true;
+        },
+      });
+    }
 
     this.app.workspace.onLayoutReady(() => {
       this.refresh();
@@ -127,18 +113,28 @@ export default class N2OPaperSettingsPlugin extends Plugin {
     });
   }
 
-  /**
-   * Get the theme itself, once, on a vault that does not have it.
-   *
-   * Without N2O Paper this plugin has nothing to render: it reads its controls
-   * out of the theme. So the first load fetches it and selects it, and the
-   * attempt is recorded either way, so a vault that does not want the theme is
-   * never asked twice. The card in the settings tab offers the same thing by
-   * hand afterwards.
-   */
+  onunload(): void {
+    reset(this.spec.controls);
+  }
+
+  async onExternalSettingsChange(): Promise<void> {
+    await this.loadStored();
+    this.refresh();
+    this.tab?.update();
+  }
+
+  private async loadStored(): Promise<void> {
+    const stored = (await this.loadData()) as StoredData | null;
+    this.values = stored?.values ?? {};
+    this.autoInstallTried = stored?.autoInstallTried === true;
+    this.images = { ...DEFAULT_IMAGE_TOOLS, ...(stored?.images ?? {}) };
+    this.savedLooks = (stored?.looks ?? []).map((l) => ({ ...l, builtIn: false }));
+    // 1.1.1 and earlier stored this default, whose 100% row does nothing now that sizes are relative.
+    if (this.images.customSizes === '25%, 50%, 100%') this.images.customSizes = DEFAULT_IMAGE_TOOLS.customSizes;
+  }
+
+  /** On a vault without the theme, fetch and select it once. The settings tab offers the same by hand. */
   private async fetchThemeOnce(): Promise<void> {
-    // Absent, or selected with an unreadable theme.css: the second case is a
-    // folder deleted by hand, where the tab would otherwise come up empty.
     const wanted = themeStatus(this.app) === 'absent' || !this.spec.controls.length;
     if (this.autoInstallTried || !wanted) return;
     this.autoInstallTried = true;
@@ -146,32 +142,20 @@ export default class N2OPaperSettingsPlugin extends Plugin {
     try {
       await installTheme(this.app, () => {});
     } catch {
-      /* offline, or the release is unreachable. The settings tab has the button. */
+      /* offline or unreachable; the settings tab has the button */
     }
   }
 
-  onunload(): void {
-    // A disabled plugin must leave nothing applied.
-    reset(this.spec.controls);
-  }
-
-  /**
-   * Read the control list from the installed theme.
-   *
-   * Reads the FILE rather than scraping the loaded stylesheet, because the
-   * @settings block is a CSS comment and comments do not survive into
-   * document.styleSheets.
-   */
+  /** Read the controls from the installed theme.css (the @settings block is a comment, so it is not in the loaded stylesheet). */
   async readTheme(): Promise<void> {
     const path = `${this.app.vault.configDir}/themes/${THEME_NAME}/theme.css`;
     try {
-      const css = await this.app.vault.adapter.read(path);
-      this.spec = parseSettingsBlock(css);
+      this.spec = parseSettingsBlock(await this.app.vault.adapter.read(path), parseYaml);
     } catch {
-      // Not installed, or a different theme is selected. Not an error; the
-      // settings tab explains it.
       this.spec = EMPTY_SPEC;
     }
+    // A stored value equal to the theme default is no change; drop it.
+    for (const c of this.spec.controls) if (c.id in this.values) store(this.values, c, this.values[c.id]);
   }
 
   /** N2O Paper is on screen and Obsidian is in dark mode, where it adds nothing. */
@@ -179,38 +163,19 @@ export default class N2OPaperSettingsPlugin extends Plugin {
     return this.activeTheme() === THEME_NAME && document.body.classList.contains('theme-dark');
   }
 
-  /** The theme actually on screen right now. Empty string means Obsidian's own. */
   activeTheme(): string {
     return customCss(this.app)?.theme ?? '';
   }
 
-  /**
-   * Should the values be on screen right now?
-   *
-   * Default is N2O Paper and nothing else, because every value written is a
-   * generic Obsidian variable that any theme reads. Applying everywhere is a
-   * real thing to want, and it is opt-in rather than the default.
-   */
+  /** Values apply only while N2O Paper is the active theme and Obsidian is light. */
   isActive(): boolean {
-    // N2O Paper is light only. In dark mode it steps aside and Obsidian's own
-    // dark look shows, so nothing is painted over it either: an inline value
-    // written there would be the half measure the theme refuses. Values are
-    // kept for the switch back, and css-change re-runs this on every switch.
-    if (this.lightOnlyInDark()) return false;
-    return this.activeTheme() === THEME_NAME;
+    return this.activeTheme() === THEME_NAME && !this.lightOnlyInDark();
   }
 
-  /**
-   * Apply, but ONLY while N2O Paper is the selected theme.
-   *
-   * Everything this plugin writes is a generic Obsidian variable
-   * (--h1-color, --background-primary) set inline on body, and every theme
-   * reads those. So trying another theme would carry our colours onto it with
-   * nothing on screen to explain why. Without the guard, a value set under
-   * N2O Paper survived a switch to another theme and to no theme at all.
-   */
   refresh(): void {
-    if (!this.isActive()) {
+    const active = this.isActive();
+    this.statusEl?.toggle(active);
+    if (!active) {
       reset(this.spec.controls);
       return;
     }
@@ -219,13 +184,95 @@ export default class N2OPaperSettingsPlugin extends Plugin {
 
   async persist(): Promise<void> {
     const data: StoredData = {
-      values: this.values,
-      open: this.open,
-      activeTab: this.activeTab,
+      values: this.values,
       autoInstallTried: this.autoInstallTried,
       images: this.images,
+      looks: this.savedLooks,
     };
     await this.saveData(data);
     this.refresh();
+  }
+
+  /** The built-in looks, then the saved ones. */
+  looks(): Look[] {
+    return [...builtInLooks(this.spec.controls), ...this.savedLooks];
+  }
+
+  lookInForce(): Look | undefined {
+    return this.looks().find((l) => lookMatches(this.spec.controls, this.values, l));
+  }
+
+  async applyLook(look: Look): Promise<void> {
+    this.values = withLook(this.spec.controls, this.values, look);
+    await this.persist();
+    this.tab?.update();
+  }
+
+  async saveLook(title: string): Promise<void> {
+    this.savedLooks.push({ id: `look-${Date.now()}`, title, values: { ...this.values }, builtIn: false });
+    await this.persist();
+  }
+
+  valueOf(c: Control): string | number | boolean | undefined {
+    return effective(c, this.values, false);
+  }
+
+  /** Toggle a toggle, or move a select or a number with a `cycle` list to its next value. */
+  async step(c: Control): Promise<void> {
+    const cur = this.valueOf(c);
+    if (c.type === 'class-toggle') {
+      await this.setValue(c, cur !== true);
+    } else if (c.type === 'variable-number') {
+      const list = c.cycle ?? [];
+      const at = list.findIndex((v) => (v === null ? cur === undefined || cur === '' : Number(cur) === v));
+      await this.setValue(c, list[(at + 1) % list.length] ?? undefined);
+    } else {
+      const s = String(cur ?? c.options[0]);
+      await this.setValue(c, c.options[(c.options.indexOf(s) + 1) % c.options.length]);
+    }
+    new Notice(`${c.title}: ${this.describe(c)}`, 1500);
+  }
+
+  async setValue(c: Control, v: string | number | boolean | undefined): Promise<void> {
+    store(this.values, c, v);
+    await this.persist();
+    this.tab?.update();
+  }
+
+  private describe(c: Control): string {
+    const v = effective(c, this.values, false);
+    if (c.type === 'class-toggle') return v === true ? 'on' : 'off';
+    if (c.type === 'variable-number') return v === undefined || v === '' ? 'default' : `${String(v)}${c.unit ?? ''}`;
+    const s = String(v ?? c.options[0]);
+    return c.labels?.[s] ?? optionLabel(s, c.options);
+  }
+
+  /** The status-bar menu: looks, palette, then the actions marked for the menu, ticked when on. */
+  private quickMenu(): Menu {
+    const menu = new Menu();
+    const looks = this.looks();
+    if (looks.length) {
+      const current = this.lookInForce();
+      menu.addItem((i) => i.setTitle('Look').setIsLabel(true));
+      for (const l of looks) {
+        menu.addItem((i) => i.setTitle(l.title).setChecked(current?.id === l.id && current.builtIn === l.builtIn).onClick(() => void this.applyLook(l)));
+      }
+      menu.addSeparator();
+    }
+    const palette = this.spec.controls.find((c) => c.id === 'n2o-palette' && c.options.length > 1);
+    if (palette) {
+      const cur = String(this.valueOf(palette) ?? palette.options[0]);
+      menu.addItem((i) => i.setTitle(palette.title).setIsLabel(true));
+      for (const o of palette.options) {
+        menu.addItem((i) => i.setTitle(palette.labels?.[o] ?? optionLabel(o, palette.options)).setChecked(o === cur)
+          .onClick(() => void this.setValue(palette, o)));
+      }
+      menu.addSeparator();
+    }
+    for (const a of this.actions.filter((x) => x.inMenu && x.available())) {
+      menu.addItem((i) => i.setTitle(a.label?.() ?? a.name)
+        .setIcon(a.icon).setChecked(a.checked?.() === true).onClick(() => a.run()));
+    }
+    return menu;
   }
 }

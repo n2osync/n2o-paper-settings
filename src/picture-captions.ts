@@ -1,50 +1,17 @@
 /**
- * A picture can carry flags AND a caption, separated by a pipe.
+ * A picture can carry flags and a caption, separated by pipes:
  *
  *     ![[cabin.png|aged|A cabin in the pines|300]]
  *
- * ## The scenario
+ * Obsidian renders that with alt "aged|A cabin in the pines" and width 300.
+ * The theme draws the caption from an attribute and matches flags on `alt`,
+ * and CSS cannot split one attribute, so this post-processor writes:
  *
- * You float a photo into the margin and want it captioned, or you age one print
- * and want to say what it is. Without this you get one or the other: the theme
- * draws the caption with `content: attr(alt)` and has to exclude any alt
- * carrying a flag word, because otherwise the word `aged` would be written
- * across the foot of the print. CSS cannot take a substring of an attribute, so
- * the theme cannot separate the two on its own.
+ *   - the wrapper's `alt`: the flags alone, which the theme's flag rules match;
+ *   - `data-n2o-caption`: the caption, which the theme draws;
+ *   - the inner image's `alt`: the caption, as the accessible name.
  *
- * ## Why a pipe, and not a space
- *
- * The first version of this split on whitespace and treated any flag word it
- * found as a flag. That is ambiguous and it eats real words: a photo captioned
- * "The left bank of the Seine" would have been floated into the margin and
- * captioned "The bank of the Seine".
- *
- * A pipe is unambiguous, and it is already Obsidian's own separator. Measured
- * rather than assumed, one case at a time:
- *
- *     ![[a.png|aged|A cabin in the pines|300]]  ->  alt "aged|A cabin in the pines", width 300
- *     ![[a.png|left|The left bank|300]]         ->  alt "left|The left bank",        width 300
- *
- * Obsidian passes the extra pipe through untouched and still reads the width
- * off the end, so nothing had to be invented.
- *
- * ## What it writes, and why each one
- *
- * Three attributes, because three different readers need three different things:
- *
- *   - the WRAPPER's `alt` becomes the flags alone, because that is what the
- *     theme's flag rules match on (`.image-embed[alt~="aged"]`), and they must
- *     keep working untouched.
- *   - `data-n2o-caption` carries the caption, which the theme draws on the foot
- *     of the print.
- *   - the inner `img`'s `alt` becomes the CAPTION, because that one is a real
- *     accessible name that a screen reader announces. Leaving `aged` there
- *     would read out a styling instruction as if it described the picture.
- *
- * ## It only ever ADDS
- *
- * An alt with no pipe is left exactly as it is, so every picture that works
- * today keeps working, with or without this plugin installed.
+ * An alt with no pipe is left as it is.
  */
 import { FLAGS } from './embed-flags';
 import { MarkdownRenderChild } from 'obsidian';
@@ -87,8 +54,7 @@ export function parseAlt(alt: string | null | undefined): ParsedAlt | null {
     else rest.push(part);
   }
 
-  /* No flag means the theme already captions it from the alt, and doing the
-   * same job twice is how two paths drift apart later. */
+  // No flag: the theme captions it from the alt on its own.
   if (!flags.length) return null;
 
   const caption = rest.find((r) => !IMAGE_FILE.test(r)) ?? null;
@@ -115,20 +81,9 @@ export function markCaptions(root: HTMLElement): void {
 }
 
 /**
- * Wire it to Obsidian.
- *
- * A post processor alone is not enough, and this cost a round of "why is
- * nothing happening": Obsidian resolves an image embed AFTER the processor
- * returns, so at the moment it runs there is no `.image-embed` in the chunk to
- * stamp. The first pass catches anything already there, and an observer
- * catches the embeds as they arrive.
- *
- * Watching, rather than sleeping a guessed number of milliseconds and hoping
- * the embed beat the clock. It ends with the chunk: the render child owns the
- * observer and disconnects it on unload.
- *
- * It cannot loop. `markCaptions` rewrites an alt into one with no pipe, so the
- * mutation it causes parses to null on the next pass and changes nothing.
+ * Stamp each rendered chunk now and again as Obsidian resolves its embeds,
+ * which happens after the post-processor returns. The observer ends with the
+ * chunk. It cannot loop: a rewritten alt has no pipe.
  */
 export function registerPictureCaptions(
   register: (fn: (el: HTMLElement, ctx: MarkdownPostProcessorContext) => void) => void,
@@ -138,10 +93,7 @@ export function registerPictureCaptions(
     const child = new MarkdownRenderChild(el);
     const observer = new MutationObserver(() => markCaptions(el));
     child.register(() => observer.disconnect());
-    /* `class` and `src` as well as `alt`. Obsidian marks an embed resolved by
-     * changing its CLASS, and an observer watching `alt` alone never fired:
-     * the element that eventually carries `.image-embed` was already in the
-     * tree, so no childList mutation announced it either. */
+    // Obsidian marks an embed resolved by changing its class, not by adding a node.
     observer.observe(el, { childList: true, subtree: true, attributeFilter: ['alt', 'class', 'src'] });
     ctx.addChild(child);
   });

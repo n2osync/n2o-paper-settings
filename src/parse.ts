@@ -1,16 +1,8 @@
 /**
- * Read the control list out of N2O Paper's own theme.css.
+ * Read the control list out of N2O Paper's theme.css.
  *
- * Why not a hardcoded list: Minimal Theme Settings, the plugin this one learns
- * from, declares every control in TypeScript and then maintains hand-written
- * arrays of class names to remove on teardown. That is the exclusion-list
- * pattern, and it drifts when a control is added without its removal line.
- *
- * The theme already carries a machine-readable spec of every control, because
- * the Style Settings format demands one and our own gate checks it. So the
- * theme is the single source of truth and this plugin renders whatever it
- * finds. Add a control to the theme, it appears here. Delete one, it vanishes,
- * along with whatever it had set.
+ * The theme's `@settings` block is the single source of truth: a control added
+ * there appears in the settings tab with no code change here.
  */
 
 export type ControlType =
@@ -22,7 +14,14 @@ export type ControlType =
   | 'variable-color'
   | 'variable-themed-color'
   | 'class-toggle'
-  | 'class-select';
+  | 'class-select'
+  | 'preset-list';
+
+export interface Preset {
+  id: string;
+  title: string;
+  values: Record<string, string | number | boolean>;
+}
 
 export interface Control {
   id: string;
@@ -31,119 +30,184 @@ export interface Control {
   type: ControlType;
   level?: number;
   format?: string;
-  /** Id of a class-toggle that reveals this control. Hidden while that
-   *  toggle is off, so a setting nobody has opted into cannot sit on screen
-   *  looking broken. An empty text box is not a default, it is a question. */
-  showWhen?: string;
-  /** A word shown beside a HEADING, marking what kind of group it is
-   *  ("Advanced"). The groups that carry it used to live under a separate
-   *  Advanced section; folding them in made the panel one list and lost the
-   *  warning, so the warning moves onto the group itself. */
-  badge?: string;
-  /** On a SECTION heading: its groups do not fold. For the short section a
-   *  reader meets first, where a fold is one click between them and the
-   *  handful of choices that change everything. */
-  flat?: boolean;
-  /** On a SECTION heading: draw no header at all. The section a reader
-   *  lands on needs no name; it is simply what is on screen. */
-  hideTitle?: boolean;
+  /** Shown after a number field: px, em, %, rem. */
+  unit?: string;
+  /** Extra words Obsidian's settings search matches. */
+  aliases?: string[];
+  /** Id of a class-toggle; this control shows only while that toggle is on. */
+  depends?: string;
+  /** Also shown in the quick layer at the top of the tab. */
+  quick?: boolean;
+  quickOrder?: number;
+  /** Hint shown in an empty number field when the control has no default. */
+  placeholder?: string;
+  /** Values the cycle command steps through; null clears the value. */
+  cycle?: (number | null)[];
   default?: string;
   defaultLight?: string;
   defaultDark?: string;
   min?: number;
   max?: number;
   step?: number;
+  /** Option values, in order. */
   options: string[];
+  /** Option labels the theme spelled out, keyed by value. */
+  labels?: Record<string, string>;
+  presets?: Preset[];
 }
 
 export interface ParseResult {
   name: string;
   id: string;
   controls: Control[];
-  /** Entries this parser could not make sense of. Surfaced in the UI rather
-   *  than dropped, so a format mistake in the theme is visible immediately
-   *  instead of silently costing a control. */
+  /** Entries that could not be read, shown in the tab rather than dropped. */
   problems: string[];
 }
 
-/**
- * A tolerant reader for the flavour of YAML that lives inside a CSS comment.
- *
- * Deliberately not a real YAML parser: the block is ours, its shape is fixed,
- * and a dependency that throws on a stray tab is worse than a short reader.
- */
-export function parseSettingsBlock(css: string): ParseResult {
-  const start = css.indexOf('/* @settings');
-  if (start < 0) return { name: '', id: '', controls: [], problems: ['no @settings block in theme.css'] };
-  const block = css.slice(start, css.indexOf('*/', start));
+const EMPTY = (problem: string): ParseResult => ({ name: '', id: '', controls: [], problems: [problem] });
 
-  const problems: string[] = [];
-  const controls: Control[] = [];
+/**
+ * Parse the block with `yaml` (Obsidian's parseYaml in the app). A block that
+ * is not valid YAML goes through the line reader instead, which understands the
+ * flat shape older theme releases shipped.
+ */
+export function parseSettingsBlock(css: string, yaml?: (text: string) => unknown): ParseResult {
+  const start = css.indexOf('/* @settings');
+  if (start < 0) return EMPTY('no @settings block in theme.css');
+  const block = css.slice(start + '/* @settings'.length, css.indexOf('*/', start));
+
+  if (yaml) {
+    try {
+      const doc = yaml(block) as { name?: unknown; id?: unknown; settings?: unknown } | null;
+      if (doc && Array.isArray(doc.settings)) {
+        const problems: string[] = [];
+        const controls: Control[] = [];
+        for (const raw of doc.settings as unknown[]) {
+          const c = toControl(raw, problems);
+          if (c) controls.push(c);
+        }
+        return { name: str(doc.name) ?? '', id: str(doc.id) ?? '', controls, problems };
+      }
+    } catch {
+      /* not valid YAML: an older theme release, read line by line below */
+    }
+  }
+  return parseLines(block);
+}
+
+function str(v: unknown): string | undefined {
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  return undefined;
+}
+
+function num(v: unknown): number | undefined {
+  if (v === undefined || v === null || v === '') return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function toControl(raw: unknown, problems: string[]): Control | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const f = raw as Record<string, unknown>;
+  const id = str(f.id);
+  const type = str(f.type);
+  if (!id || !type) {
+    problems.push(`entry with no ${!id ? 'id' : 'type'}: ${JSON.stringify(f).slice(0, 80)}`);
+    return null;
+  }
+
+  const options: string[] = [];
+  const labels: Record<string, string> = {};
+  if (Array.isArray(f.options)) {
+    for (const o of f.options as unknown[]) {
+      if (typeof o === 'object' && o !== null) {
+        const value = str((o as Record<string, unknown>).value);
+        if (value === undefined) continue;
+        options.push(value);
+        const label = str((o as Record<string, unknown>).label);
+        if (label) labels[value] = label;
+      } else {
+        const value = str(o);
+        if (value !== undefined) options.push(value);
+      }
+    }
+  }
+
+  const c: Control = { id, title: str(f.title) ?? id, type: type as ControlType, options };
+  c.description = str(f.description);
+  c.level = num(f.level);
+  c.format = str(f.format);
+  c.unit = str(f.unit);
+  c.depends = str(f.depends) ?? str(f.showWhen);
+  c.quick = f.quick === true;
+  c.quickOrder = num(f['quick-order']);
+  c.placeholder = str(f.placeholder);
+  if (Array.isArray(f.cycle)) c.cycle = (f.cycle as unknown[]).map((v) => (v === 'unset' ? null : num(v))).filter((v): v is number | null => v !== undefined);
+  c.default = str(f.default);
+  c.defaultLight = str(f['default-light']);
+  c.defaultDark = str(f['default-dark']);
+  c.min = num(f.min);
+  c.max = num(f.max);
+  c.step = num(f.step);
+  if (Array.isArray(f.aliases)) c.aliases = (f.aliases as unknown[]).map(str).filter((a): a is string => !!a);
+  if (Object.keys(labels).length) c.labels = labels;
+  if (Array.isArray(f.presets)) c.presets = (f.presets as unknown[]).map(toPreset).filter((p): p is Preset => !!p);
+  return c;
+}
+
+function toPreset(raw: unknown): Preset | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const p = raw as Record<string, unknown>;
+  const id = str(p.id);
+  if (!id || typeof p.values !== 'object' || p.values === null) return null;
+  const values: Preset['values'] = {};
+  for (const [k, v] of Object.entries(p.values as Record<string, unknown>)) {
+    if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') values[k] = v;
+  }
+  return { id, title: str(p.title) ?? id, values };
+}
+
+/** The line reader for blocks that are not valid YAML. Flat keys and string lists only. */
+function parseLines(block: string): ParseResult {
+  const raws: Record<string, unknown>[] = [];
   let name = '';
   let id = '';
+  let current: Record<string, unknown> | null = null;
+  let list: string[] | null = null;
 
-  /** Fields and options are kept apart so neither needs a cast to read. */
-  interface RawEntry { fields: Record<string, string>; options: string[] }
-  let current: RawEntry | null = null;
-  let inOptions = false;
-
-  const flush = () => {
-    if (!current) return;
-    const { fields: f, options } = current;
-    current = null;
-    if (!f.id || !f.type) {
-      problems.push(`entry with no ${!f.id ? 'id' : 'type'}: ${JSON.stringify(f).slice(0, 80)}`);
-      return;
-    }
-    const control: Control = {
-      id: f.id,
-      title: f.title ?? f.id,
-      description: f.description,
-      type: f.type as ControlType,
-      options,
-    };
-    if (f.level) control.level = Number(f.level);
-    if (f.format) control.format = f.format;
-    if (f.showWhen) control.showWhen = String(f.showWhen);
-    if (f.badge) control.badge = String(f.badge);
-    if (f.flat) control.flat = String(f.flat) === 'true';
-    if (f.hideTitle) control.hideTitle = String(f.hideTitle) === 'true';
-    if (f.default !== undefined) control.default = f.default;
-    if (f['default-light'] !== undefined) control.defaultLight = f['default-light'];
-    if (f['default-dark'] !== undefined) control.defaultDark = f['default-dark'];
-    if (f.min !== undefined) control.min = Number(f.min);
-    if (f.max !== undefined) control.max = Number(f.max);
-    if (f.step !== undefined) control.step = Number(f.step);
-    controls.push(control);
-  };
-
-  for (const raw of block.split('\n')) {
-    const line = raw.replace(/\s+$/, '');
-
-    if (/^\s*-\s*$/.test(line)) { flush(); current = { fields: {}, options: [] }; inOptions = false; continue; }
-
-    const opt = line.match(/^\s*-\s+(.+)$/);
-    if (current && inOptions && opt) {
-      current.options.push(opt[1].trim().replace(/^['"]|['"]$/g, ''));
+  for (const rawLine of block.split('\n')) {
+    const line = rawLine.replace(/\s+$/, '');
+    if (/^\s*-\s*$/.test(line)) {
+      current = {};
+      raws.push(current);
+      list = null;
       continue;
     }
-
-    const kv = line.match(/^\s*([a-zA-Z-]+):\s*(.*)$/);
+    const item = /^\s*-\s+(.+)$/.exec(line);
+    if (current && list && item) {
+      list.push(item[1].trim().replace(/^['"]|['"]$/g, ''));
+      continue;
+    }
+    const kv = /^\s*([a-zA-Z-]+):\s*(.*)$/.exec(line);
     if (!kv) continue;
-    const key = kv[1];
     const value = kv[2].trim().replace(/^['"]|['"]$/g, '');
-
     if (!current) {
-      if (key === 'name') name = value;
-      if (key === 'id') id = value;
+      if (kv[1] === 'name') name = value;
+      if (kv[1] === 'id') id = value;
       continue;
     }
-    if (key === 'options') { inOptions = true; continue; }
-    inOptions = false;
-    current.fields[key] = value;
+    if (value === '' && (kv[1] === 'options' || kv[1] === 'aliases')) {
+      list = [];
+      current[kv[1]] = list;
+      continue;
+    }
+    list = null;
+    current[kv[1]] = kv[1] === 'quick' ? value === 'true' : value;
   }
-  flush();
 
+  const problems: string[] = [];
+  const controls = raws.map((r) => toControl(r, problems)).filter((c): c is Control => !!c);
   return { name, id, controls, problems };
 }
 

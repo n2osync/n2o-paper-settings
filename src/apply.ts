@@ -1,20 +1,10 @@
 /**
- * Put the user's choices onto the page, and take them off again cleanly.
+ * Put the user's choices onto the page and take them off again.
  *
- * Two lessons taken from Minimal Theme Settings:
- *
- *   Inline properties, not an injected stylesheet. body.setCssProps() writes
- *   inline styles, which beat every selector in the theme without a specificity
- *   war and without a <style> element to keep in the right document order. Style
- *   Settings takes the other route and has to add a body class purely so its
- *   rules can outrank the theme's.
- *
- *   Remove everything on unload. Classes and properties left behind after
- *   being disabled look like the next theme's bugs.
- *
- * Where this improves on Minimal: it maintains hand-written arrays of every
- * class to remove. Ours are derived from the parsed controls, so teardown
- * cannot fall out of step with what was applied.
+ * Values go on body as inline custom properties and classes, and only the ones
+ * the user changed: an inline default would beat the theme's own conditional
+ * rules. Teardown is derived from the parsed controls, so it removes exactly
+ * what apply() can add.
  */
 import type { Control } from './parse';
 import { hexToHsl } from './parse';
@@ -42,22 +32,35 @@ export function effective(c: Control, values: Values, isDark: boolean): string |
   const chosen = values[c.id];
   if (chosen !== undefined && chosen !== '') return chosen;
   if (c.type === 'variable-themed-color') return isDark ? c.defaultDark : c.defaultLight;
-  // The YAML gives a toggle's default as text. Everything downstream
-  // compares against a real boolean, so it becomes one here and nowhere else.
   if (c.type === 'class-toggle') return c.default === 'true';
   return c.default;
 }
 
-/**
- * Apply everything. Called on load, on any change, and again whenever Obsidian
- * reports a css-change, because switching light and dark alters which half of
- * every themed colour is in force.
- */
+/** The theme's own default for a control, as the value the UI would store. */
+export function defaultOf(c: Control): string | number | boolean | undefined {
+  if (c.type === 'class-toggle') return false;
+  if (c.type === 'variable-themed-color') return c.defaultLight ?? c.default;
+  if (c.type === 'variable-number' || c.type === 'variable-number-slider') {
+    return c.default === undefined ? undefined : Number(c.default);
+  }
+  return c.default;
+}
+
+/** Store a value, or drop it when it is empty or equal to the theme default. */
+export function store(values: Values, c: Control, v: string | number | boolean | undefined): void {
+  const def = defaultOf(c);
+  if (v === undefined || v === '' || (def !== undefined && String(v).toLowerCase() === String(def).toLowerCase())) {
+    delete values[c.id];
+  } else {
+    values[c.id] = v;
+  }
+}
+
+/** Apply every changed value. Runs on load, on any change, and on css-change. */
 export function apply(controls: Control[], values: Values): void {
   const body = document.body;
   const isDark = body.classList.contains('theme-dark');
 
-  // Start from a clean slate so a control that was just cleared really clears.
   reset(controls);
 
   const props: Record<string, string> = {};
@@ -65,14 +68,6 @@ export function apply(controls: Control[], values: Values): void {
   for (const c of controls) {
     if (c.type === 'heading') continue;
 
-    // ONLY what the user actually changed. Writing the theme's own defaults
-    // back as inline styles looks harmless and is not: an inline value beats
-    // every rule in the stylesheet, so it freezes out the theme's own
-    // conditional rules. Writing the default 0.95rem for
-    // --font-paragraph defeated the smaller size the theme sets
-    // for its compact-interface mode, and did the same to every themed
-    // colour's light and dark halves. The theme should govern until the user
-    // overrides it, and not one property before.
     if (values[c.id] === undefined || values[c.id] === '') continue;
     const v = effective(c, values, isDark);
 
@@ -115,26 +110,8 @@ export function reset(controls: Control[]): void {
 }
 
 /**
- * Keep only what THIS theme can actually use, and say what was thrown away.
- *
- * Import used to accept any non-null non-array object, assign it, and persist
- * it, and only then apply it. Three things went wrong at once:
- *
- *   - `{}` or a copied package.json passed, wiping every setting, and the
- *     notice said "Imported 0 setting(s)" as though it had worked.
- *   - a value carrying a space reached `body.classList.add`, which throws
- *     InvalidCharacterError. The catch reported "not an N2O Paper export",
- *     by which time data.json had ALREADY been overwritten: the old config
- *     was gone and the message said nothing had happened.
- *   - a select value from an older theme version was applied but could never
- *     be removed, because reset() only knows the options the theme declares
- *     today.
- *
- * Validating against the control list fixes all three, and it identifies an
- * export better than a marker would: a file whose keys are this theme's
- * control ids IS one, whatever it claims about itself.
- *
- * Returns null when the input is not an object at all. Pure, and tested.
+ * Keep only values this theme's controls accept: known ids, valid options,
+ * finite numbers. Returns null when the input is not an object at all.
  */
 export function sanitize(controls: Control[], raw: unknown): { values: Values; dropped: number } | null {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null;
@@ -156,8 +133,7 @@ export function sanitize(controls: Control[], raw: unknown): { values: Values; d
 function fits(c: Control, v: unknown): string | number | boolean | undefined {
   switch (c.type) {
     case 'class-toggle':
-      // Only `true` is ever stored; false means "left at the default", and a
-      // string "true" is not a toggle, it is a mistake that renders as one.
+      // Only `true` is stored; false means "left at the default".
       return v === true ? true : undefined;
     case 'class-select':
     case 'variable-select':
@@ -165,8 +141,10 @@ function fits(c: Control, v: unknown): string | number | boolean | undefined {
     case 'variable-number':
     case 'variable-number-slider':
       return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+    case 'preset-list':
+      return undefined;
     default:
-      // text and colours. A number is allowed: the UI writes one for sizes.
+      // Text and colours. A number is allowed: the UI writes one for sizes.
       return typeof v === 'string' || typeof v === 'number' ? v : undefined;
   }
 }

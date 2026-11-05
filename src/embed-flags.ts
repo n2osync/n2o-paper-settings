@@ -6,14 +6,9 @@
  * width. Anything that edits one of them has to leave the other three alone,
  * which is the whole difficulty and is pure string work.
  *
- * Separated from the menu so it can be run without Obsidian present:
- * `node scripts/check-embed-flags.mjs`. picture-captions.ts says its parser is
- * "exported for its tests" and there were none, so this file is the first in
- * the repo that can actually fail.
+ * No Obsidian imports, so `node scripts/check-embed-flags.mjs` can test it.
  */
-/** The words that are flags and not caption text. The vocabulary lives with
- *  the grammar, so nothing that parses an embed has to import Obsidian to
- *  learn it, and there is one list rather than two to drift apart. */
+/** The words that are flags and not caption text. */
 export const FLAGS = new Set(['left', 'right', 'round', 'aged', 'seamless', 'torn', 'plain']);
 
 /** Obsidian's own trailing size part, which is a number and never a caption. */

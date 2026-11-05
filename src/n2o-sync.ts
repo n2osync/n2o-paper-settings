@@ -1,15 +1,13 @@
 /**
- * The N2O Sync card: shows whether N2O Sync is in this vault, and installs it.
+ * The N2O Sync row: shows whether N2O Sync is in this vault, and installs it.
  *
- * The installer is N2O Sync Lite's (`n2o-lite/src/plugin/pro-installer.ts`),
- * ported, because Lite already ships it through the community store: nothing is
- * fetched until the person clicks Install, the disclosure Obsidian's developer
- * policies ask for sits next to the button, and nothing reaches disk until
- * every release file passes verification. Keep the two in step: a change to what
- * a release contains has to land in both, and a unit test in the n2o repo fails
- * when REQUIRED_ASSETS here disagrees with RELEASE_ASSETS in n2o/deploy.sh.
+ * The installer is a port of N2O Sync Lite's (`n2o-lite/src/plugin/pro-installer.ts`):
+ * nothing is fetched until the person clicks Install, and nothing reaches disk
+ * until every release file passes verification. Keep the two in step; a unit
+ * test in the n2o repo fails when REQUIRED_ASSETS here disagrees with
+ * RELEASE_ASSETS in n2o/deploy.sh.
  */
-import { App, Notice, requestUrl } from 'obsidian';
+import { App, Notice, requestUrl, type ButtonComponent, type Setting } from 'obsidian';
 import { MARK_GEM, MARK_LETTERS, MARK_VIEWBOX } from './brand-paths';
 
 /** The full edition's plugin id. */
@@ -143,7 +141,7 @@ function verify(files: Record<Asset, ArrayBuffer>): void {
 export async function enableSync(app: App): Promise<void> {
   const p = plugins(app);
   if (!p?.enablePluginAndSave) {
-    new Notice('N2O Sync is installed. Turn it on under Settings, Community plugins.', 10000);
+    new Notice('N2O Sync is installed. Turn it on in the community plugins settings.', 10000);
     return;
   }
   const liteWasOn = p.enabledPlugins?.has(LITE_ID) === true;
@@ -171,19 +169,8 @@ export async function installSync(app: App, onProgress: (m: string) => void): Pr
 }
 
 /**
- * Say who installed it, once, in the folder we just wrote.
- *
- * Somebody reading in this theme who presses the button above is the whole
- * reason the theme is free, and until now that install was invisible: the
- * account it eventually creates looks exactly like somebody who found N2O on
- * their own. N2O Sync reads this file on its first connect, sends the one word
- * in it, and DELETES it, so it rides exactly one connect and cannot re-stamp an
- * account later.
- *
- * Failure is swallowed on purpose. Nobody is waiting on it, there is nothing a
- * person could fix, and an attribution note must never be the reason an install
- * fails. Worst case the install is simply not attributed, which is what every
- * install did before this existed.
+ * Write install-source.json next to the files just installed. N2O Sync reads
+ * it on its first connect and deletes it. A failure here never fails the install.
  */
 async function leaveInstallMarker(app: App, dir: string): Promise<void> {
   try {
@@ -230,64 +217,50 @@ export function brandMark(): SVGSVGElement {
   return svg;
 }
 
-/**
- * One row of the box at the top of the tab: the mark and name on the left, the
- * state under it, the actions on the right. `redraw` re-renders the tab after
- * a state change.
- */
-export function renderSyncRow(app: App, el: HTMLElement, redraw: () => void): void {
-  const row = el.createDiv({ cls: 'n2o-ps-row' });
-  const text = row.createDiv({ cls: 'n2o-ps-row-text' });
-  const head = text.createDiv({ cls: 'n2o-ps-sync-head' });
-  head.appendChild(brandMark());
-  head.createSpan({ cls: 'n2o-ps-sync-name', text: 'Sync' });
+/** The N2O Sync row in the settings tab. `redraw` re-renders the tab after a state change. */
+export function renderSyncRow(app: App, setting: Setting, redraw: () => void): void {
+  setting.nameEl.empty();
+  setting.nameEl.appendChild(brandMark());
+  setting.nameEl.createSpan({ text: ' Sync' });
 
   const status = syncStatus(app);
-  const body = text.createDiv({ cls: 'n2o-ps-sync-body' });
-  const actions = row.createDiv({ cls: 'n2o-ps-sync-actions' });
-  const line = text.createDiv({ cls: 'n2o-ps-sync-line' });
-
   if (status === 'running') {
-    body.setText('N2O Sync is running in this vault.');
-    const open = actions.createEl('button', { text: 'Open N2O Sync settings' });
-    open.onclick = () => (app as unknown as { setting?: { openTabById?: (id: string) => void } }).setting?.openTabById?.(SYNC_ID);
+    setting.setDesc('N2O Sync is running in this vault.');
+    setting.addButton((b) => b.setButtonText('Open N2O Sync settings').onClick(() => {
+      (app as unknown as { setting?: { openTabById?: (id: string) => void } }).setting?.openTabById?.(SYNC_ID);
+    }));
     return;
   }
 
-  body.setText(
-    'Keep your Notion pages and these notes in step, both ways, with N2O Sync. 14 days free, then Pro.',
-  );
-  const learn = actions.createEl('a', { text: 'Learn more', href: SITE_URL });
-  learn.setAttr('target', '_blank');
+  setting.setDesc('Keep your Notion pages and these notes in step, both ways, with N2O Sync. Free for 14 days, then Pro.');
+  setting.controlEl.createEl('a', { cls: 'n2o-ps-learn', text: 'Learn more', href: SITE_URL, attr: { target: '_blank' } });
 
   if (status === 'installed') {
-    const on = actions.createEl('button', { cls: 'mod-cta', text: 'Turn on N2O Sync' });
-    on.onclick = async () => {
-      on.disabled = true;
+    setting.addButton((b) => b.setButtonText('Turn on N2O Sync').onClick(async () => {
+      b.setDisabled(true);
       try {
         await enableSync(app);
       } catch (e) {
-        line.setText(`Could not turn N2O Sync on: ${e instanceof Error ? e.message : String(e)}`);
-        on.disabled = false;
+        setting.setDesc(`Could not turn N2O Sync on: ${e instanceof Error ? e.message : String(e)}`);
+        b.setDisabled(false);
         return;
       }
       redraw();
-    };
+    }));
     return;
   }
 
-  const install = actions.createEl('button', { cls: 'mod-cta', text: 'Install N2O Sync Pro' });
-  install.onclick = async () => {
-    install.disabled = true;
-    try {
-      await installSync(app, (m) => line.setText(m));
-    } catch (e) {
-      line.setText(e instanceof Error ? e.message : String(e));
-      line.addClass('mod-warning');
-      install.disabled = false;
-      install.setText('Try again');
-      return;
-    }
-    redraw();
-  };
+  setting.addButton((b) => b.setButtonText('Install N2O Sync Pro').onClick(() => void install(app, setting, b, redraw)));
+}
+
+async function install(app: App, setting: Setting, b: ButtonComponent, redraw: () => void): Promise<void> {
+  b.setDisabled(true);
+  try {
+    await installSync(app, (m) => { setting.setDesc(m); });
+  } catch (e) {
+    setting.setDesc(e instanceof Error ? e.message : String(e));
+    b.setDisabled(false).setButtonText('Try again');
+    return;
+  }
+  redraw();
 }
