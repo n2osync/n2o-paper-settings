@@ -15,6 +15,10 @@ const context = await esbuild.context({
   treeShaking: true,
   outfile: 'main.js',
   minify: production,
+  /* A production build compiles out test seams that check NODE_ENV, such as
+   * the release-signature key override (#512): without this, process.env is
+   * Electron's own at runtime and the override would stay live. */
+  define: { 'process.env.NODE_ENV': production ? '"production"' : '"development"' },
 });
 
 if (production) {

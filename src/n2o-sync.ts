@@ -9,6 +9,7 @@
  */
 import { App, Notice, requestUrl, type ButtonComponent, type Setting } from 'obsidian';
 import { MARK_GEM, MARK_LETTERS, MARK_VIEWBOX } from './brand-paths';
+import { SIGNED_RELEASE_FILES, signedReleaseProblem } from './release-signature';
 
 /** The full edition's plugin id. */
 const SYNC_ID = 'n2o';
@@ -16,8 +17,11 @@ const SYNC_ID = 'n2o';
 const LITE_ID = 'notion-pull-lite';
 const RELEASE_API_URL = 'https://api.github.com/repos/n2osync/n2o/releases/latest';
 const SITE_URL = 'https://n2osync.com';
-/** Every file the install needs. Must equal RELEASE_ASSETS in n2o/deploy.sh. */
-const REQUIRED_ASSETS = ['main.js', 'manifest.json', 'styles.css'] as const;
+/**
+ * Every file the install needs. Must equal RELEASE_ASSETS in n2o/deploy.sh.
+ * release-signature.json is checked, never installed (#512).
+ */
+const REQUIRED_ASSETS = ['main.js', 'manifest.json', 'styles.css', 'release-signature.json'] as const;
 type Asset = (typeof REQUIRED_ASSETS)[number];
 const MIN_MAIN_JS_BYTES = 100 * 1024;
 /**
@@ -158,10 +162,15 @@ export async function installSync(app: App, onProgress: (m: string) => void): Pr
   const files = await download(onProgress);
   onProgress('Checking the files...');
   verify(files);
+  /* #512: signed by N2O, and not a byte changed since, or nothing is installed. */
+  const problem = await signedReleaseProblem(files);
+  if (problem) {
+    throw new Error(`Not installing this N2O Sync release: ${problem}. Nothing was installed. Try again later, or install from ${SITE_URL}.`);
+  }
   onProgress('Installing...');
   const dir = `${app.vault.configDir}/plugins/${SYNC_ID}`;
   if (!(await app.vault.adapter.exists(dir))) await app.vault.adapter.mkdir(dir);
-  for (const name of REQUIRED_ASSETS) await app.vault.adapter.writeBinary(`${dir}/${name}`, files[name]);
+  for (const name of SIGNED_RELEASE_FILES) await app.vault.adapter.writeBinary(`${dir}/${name}`, files[name]);
   await leaveInstallMarker(app, dir);
   await plugins(app)?.loadManifests?.();
   onProgress('Turning it on...');
